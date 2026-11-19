@@ -1,0 +1,10 @@
+{
+  "name": "FLAPPY FACE",
+  "description": "One tap. Endless chaos. Flappy Face is a fun arcade flying game where your face becomes the pilot. Dodge pipes, beat your high score, and challenge your friends in local tournaments.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
