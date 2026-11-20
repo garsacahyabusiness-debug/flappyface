@@ -22,6 +22,8 @@ import { achievementManager, AchievementRecord } from './progression/Achievement
 import { DifficultyTierId } from './progression/DifficultyConfig';
 import { difficultyManager } from './progression/DifficultyManager';
 import { leaderboardManager } from './progression/LeaderboardManager';
+import { playerProgressionManager } from './progression/PlayerProgressionManager';
+import { ProgressionProfileId } from './progression/PlayerProgressTypes';
 import { statsManager } from './progression/StatsManager';
 import { Renderer } from './Renderer';
 import { Score } from './Score';
@@ -70,6 +72,7 @@ export interface GameUIState {
   latestPowerUpBanner: PowerUpBannerEvent | null;
   runCoinsCollected: number;
   runGemsCollected: number;
+  runXPGained: number;
 }
 
 const COUNTDOWN_STEP_SECONDS = 0.72;
@@ -123,6 +126,10 @@ export class Game {
   private runCollided = false;
   private runUsedShield = false;
   private runUsedSecondChance = false;
+  private activeRunId = '';
+  private runPipeCount = 0;
+  private runXPGained = 0;
+  private runSeq = 0;
   private fpsSampleFrames = 0;
   private fpsSampleElapsed = 0;
   private lowFpsStreak = 0;
@@ -205,14 +212,30 @@ export class Game {
     };
   }
 
+  private getProgressionProfileId(slot: PlayerSlot | null): ProgressionProfileId {
+    return slot === 1 ? 'player1' : slot === 2 ? 'player2' : 'solo';
+  }
+
   private beginRunMissionTracking(slot: PlayerSlot | null): void {
     this.runCollided = false;
     this.runUsedShield = false;
     this.runUsedSecondChance = false;
+    this.runPipeCount = 0;
+    this.runXPGained = 0;
+    this.runSeq += 1;
+    this.activeRunId = `${Date.now()}-${this.runSeq}`;
     const ctx = this.getActiveMissionContext(slot);
     missionManager.emitEvent({ type: 'game_started', ...ctx });
     missionManager.emitEvent({ type: 'world_played', ...ctx });
     missionManager.emitEvent({ type: 'character_used', ...ctx });
+
+    const startXpRes = playerProgressionManager.recordGameplayStarted(
+      this.getProgressionProfileId(slot),
+      this.activeRunId,
+      ctx.characterId,
+      ctx.worldId
+    );
+    this.runXPGained += startXpRes.amount;
   }
 
   private syncDetailLevel(): void {
@@ -370,10 +393,10 @@ export class Game {
 
   public syncBackgroundSkyTheme(): void {
     const summary = characterUnlockManager.getCollectionSummary();
+    const hasTheme =
+      summary.hasSpecialBackground || playerProgressionManager.hasExclusiveWorldTheme('solo');
     const wanted = settingsManager.getSettings().skyTheme;
-    this.background.setSkyTheme(
-      summary.hasSpecialBackground && wanted === 'special' ? 'special' : 'classic'
-    );
+    this.background.setSkyTheme(hasTheme && wanted === 'special' ? 'special' : 'classic');
   }
 
   public syncEnvironmentSettings(): void {
@@ -515,12 +538,15 @@ export class Game {
       | 'LEADERBOARD'
       | 'ACHIEVEMENTS'
       | 'MISSION_CENTER'
+      | 'PLAYER_PROGRESSION'
+      | 'PLAYER_PROFILE'
       | 'STATS'
       | 'SETTINGS'
       | 'ABOUT'
       | 'TWO_PLAYER_SETUP',
     preferredFormat?: MatchFormat
   ): void {
+    playerProgressionManager.flushPlayTime();
     this.state = next;
     if (next === 'MAIN_MENU') {
       this.pausedFromState = 'PLAYING';
@@ -684,6 +710,14 @@ export class Game {
       let finalized = updatedMatch;
       if (!finalized.recordedToHistory) {
         leaderboardManager.recordCompletedMatch(finalized);
+        playerProgressionManager.recordMultiplayerMatchXP({
+          matchId: `${finalized.startedAt}-${finalized.completedAt ?? Date.now()}-${finalized.format}`,
+          format: finalized.format,
+          status: finalized.status,
+          winner: finalized.winner,
+          player1Name: finalized.player1Name,
+          player2Name: finalized.player2Name,
+        });
         const worldId = worldUnlockManager.getSelectedWorldId();
         missionManager.emitEvent({
           type: 'multiplayer_played',
@@ -880,6 +914,7 @@ export class Game {
     achievementManager.reset();
     statsManager.reset();
     currencyManager.reset();
+    playerProgressionManager.reset(true);
     this.emitUIState();
   }
 
@@ -984,6 +1019,7 @@ export class Game {
       latestPowerUpBanner: this.latestPowerUpBanner,
       runCoinsCollected: this.powerUps.effects.runCoinsCollected,
       runGemsCollected: this.powerUps.effects.runGemsCollected,
+      runXPGained: this.runXPGained,
     });
   }
 
@@ -1042,6 +1078,8 @@ export class Game {
     this.deathElapsed = 0;
     this.gameOverPanelShown = false;
     this.latestPowerUpBanner = null;
+    const runCoins = this.powerUps.effects.runCoinsCollected;
+    const runGems = this.powerUps.effects.runGemsCollected;
     this.powerUps.cleanupOnGameEnd();
     this.currentGameOverReaction = gameOverReactionSystem.pickReaction(this.score.current);
     this.renderer.triggerCollisionEffect(this.player.x, this.player.y);
@@ -1073,6 +1111,16 @@ export class Game {
       this.evaluateWorldUnlocks(true);
     }
 
+    const finishXp = playerProgressionManager.recordGameplayFinished(
+      this.getProgressionProfileId(slot),
+      this.activeRunId,
+      this.score.current,
+      this.runPipeCount,
+      runCoins,
+      runGems
+    );
+    this.runXPGained += finishXp.amount;
+
     missionManager.emitEvent({
       type: 'game_finished',
       ...this.getActiveMissionContext(slot),
@@ -1090,8 +1138,29 @@ export class Game {
     newBestTriggered: boolean,
     spawnBurst: boolean
   ): void {
+    const profileId = this.getProgressionProfileId(slot);
     if (spawnBurst) {
       this.renderer.particles.spawnScoreBurst(this.player.x, this.player.y);
+      this.runPipeCount += 1;
+      const pipeXp = playerProgressionManager.recordGameplayPipePassed(
+        profileId,
+        this.activeRunId,
+        this.runPipeCount,
+        this.score.current
+      );
+      this.runXPGained += pipeXp.pipeResult.amount;
+      for (const ms of pipeXp.milestoneResults) {
+        this.runXPGained += ms.amount;
+      }
+    } else {
+      const msList = playerProgressionManager.recordGameplayScoreMilestones(
+        profileId,
+        this.activeRunId,
+        this.score.current
+      );
+      for (const ms of msList) {
+        this.runXPGained += ms.amount;
+      }
     }
 
     const missionCtx = this.getActiveMissionContext(slot);
@@ -1120,6 +1189,12 @@ export class Game {
       }
 
       if (newBestTriggered) {
+        const bestXp = playerProgressionManager.recordPersonalBestXP(
+          'solo',
+          this.activeRunId,
+          this.score.best
+        );
+        this.runXPGained += bestXp.amount;
         this.newBestEventId += 1;
         this.renderer.particles.spawnNewBestCelebration();
         audioManager.playNewBest();
@@ -1136,6 +1211,7 @@ export class Game {
   }
 
   private updateActiveGameplay(dt: number, slot: PlayerSlot | null): void {
+    playerProgressionManager.recordPlayTime(this.getProgressionProfileId(slot), dt);
     const diff = difficultyManager.getForScore(this.score.current);
     const speedFactor = diff.difficultyMultiplier;
     const envSlowMult = this.powerUps.effects.getEnvironmentSpeedMultiplier();
@@ -1310,6 +1386,8 @@ export class Game {
       this.state === 'LEADERBOARD' ||
       this.state === 'ACHIEVEMENTS' ||
       this.state === 'MISSION_CENTER' ||
+      this.state === 'PLAYER_PROGRESSION' ||
+      this.state === 'PLAYER_PROFILE' ||
       this.state === 'STATS' ||
       this.state === 'SETTINGS' ||
       this.state === 'ABOUT' ||

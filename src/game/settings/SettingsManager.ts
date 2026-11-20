@@ -33,6 +33,9 @@ export interface GameSettings {
   missionRewardAnimationEnabled: boolean;
   reducedMotion: boolean;
   missionReminderEnabled: boolean;
+  xpNotificationsEnabled: boolean;
+  levelUpAnimationEnabled: boolean;
+  progressionSoundsEnabled: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'flappy_face_settings';
@@ -70,6 +73,9 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   missionRewardAnimationEnabled: true,
   reducedMotion: false,
   missionReminderEnabled: true,
+  xpNotificationsEnabled: true,
+  levelUpAnimationEnabled: true,
+  progressionSoundsEnabled: true,
 };
 
 function clamp01(val: unknown, fallback: number): number {
@@ -159,6 +165,7 @@ export class SettingsManager {
       sfxEnabled: this.settings.sfxEnabled,
       ambientEnabled: this.settings.ambientSoundEnabled,
       missionSoundsEnabled: this.settings.missionSoundsEnabled,
+      progressionSoundsEnabled: this.settings.progressionSoundsEnabled,
     });
     vibrationManager.setEnabled(this.settings.vibrationEnabled);
   }
@@ -272,6 +279,18 @@ export class SettingsManager {
           typeof parsed.missionReminderEnabled === 'boolean'
             ? parsed.missionReminderEnabled
             : DEFAULT_GAME_SETTINGS.missionReminderEnabled,
+        xpNotificationsEnabled:
+          typeof parsed.xpNotificationsEnabled === 'boolean'
+            ? parsed.xpNotificationsEnabled
+            : DEFAULT_GAME_SETTINGS.xpNotificationsEnabled,
+        levelUpAnimationEnabled:
+          typeof parsed.levelUpAnimationEnabled === 'boolean'
+            ? parsed.levelUpAnimationEnabled
+            : DEFAULT_GAME_SETTINGS.levelUpAnimationEnabled,
+        progressionSoundsEnabled:
+          typeof parsed.progressionSoundsEnabled === 'boolean'
+            ? parsed.progressionSoundsEnabled
+            : DEFAULT_GAME_SETTINGS.progressionSoundsEnabled,
       };
     } catch {
       return { ...DEFAULT_GAME_SETTINGS };

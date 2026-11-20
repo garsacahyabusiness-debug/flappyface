@@ -1,3 +1,4 @@
+import { playerProgressionManager } from '../progression/PlayerProgressionManager';
 import {
   CHARACTER_MAP,
   CHARACTER_REGISTRY,
@@ -215,6 +216,9 @@ export class CharacterUnlockManager {
       if (met) {
         this.unlockedMap[def.id] = { unlockedAt: now };
         newlyUnlocked.push(def);
+        if (def.unlockCondition.type !== 'starter') {
+          playerProgressionManager.recordCharacterUnlockXP(def.id, def.name, 'gameplay');
+        }
       }
     }
 
@@ -224,6 +228,9 @@ export class CharacterUnlockManager {
       totalGamesPlayed: metrics.totalGamesPlayed,
       collectionPercent: summary.percent,
     });
+    if (summary.hasLegendTitle) {
+      playerProgressionManager.unlockTitle('legend_face', 'solo');
+    }
 
     if (newlyUnlocked.length > 0) {
       this.save();
@@ -231,6 +238,38 @@ export class CharacterUnlockManager {
     }
 
     return newlyUnlocked;
+  }
+
+  public unlockRewardCharacter(
+    characterId: string,
+    source: 'level_reward' | 'gameplay' = 'level_reward'
+  ): boolean {
+    const def = CHARACTER_MAP.get(characterId);
+    if (!def || this.unlockedMap[characterId]) {
+      return false;
+    }
+    this.unlockedMap[characterId] = { unlockedAt: Date.now() };
+    this.save();
+    this.notify();
+    if (source === 'gameplay' && def.unlockCondition.type !== 'starter') {
+      playerProgressionManager.recordCharacterUnlockXP(def.id, def.name, 'gameplay');
+    }
+    if (this.getCollectionSummary().hasLegendTitle) {
+      playerProgressionManager.unlockTitle('legend_face', 'solo');
+    }
+    return true;
+  }
+
+  public unlockFirstLockedByRarity(
+    rarity: CharacterRarity,
+    source: 'level_reward' | 'gameplay' = 'level_reward'
+  ): CharacterDefinition | null {
+    const candidate = CHARACTER_REGISTRY.find(
+      (c) => c.rarity === rarity && !this.unlockedMap[c.id]
+    );
+    if (!candidate) return null;
+    const unlocked = this.unlockRewardCharacter(candidate.id, source);
+    return unlocked ? candidate : null;
   }
 
   public getCollectionSummary(): CollectionSummary {

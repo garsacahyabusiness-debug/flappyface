@@ -1,4 +1,5 @@
 import { CharacterMetrics } from '../character/CharacterUnlockManager';
+import { playerProgressionManager } from '../progression/PlayerProgressionManager';
 import {
   getWorldById,
   WeatherType,
@@ -211,7 +212,14 @@ export class WorldUnlockManager {
       if (met) {
         this.unlockedMap[def.id] = { unlockedAt: now };
         newlyUnlocked.push(def);
+        if (def.unlockCondition.type !== 'starter') {
+          playerProgressionManager.recordWorldUnlockXP(def.id, def.name);
+        }
       }
+    }
+
+    if (this.getCollectionSummary().hasEnvEffectReward) {
+      playerProgressionManager.unlockTitle('world_traveler', 'solo');
     }
 
     if (newlyUnlocked.length > 0) {

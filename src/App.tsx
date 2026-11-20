@@ -20,7 +20,15 @@ import {
   LeaderboardPlayerEntry,
   MatchHistoryEntry,
 } from './game/progression/LeaderboardManager';
+import { playerProgressionManager } from './game/progression/PlayerProgressionManager';
+import {
+  LevelUpEvent,
+  PlayerProgressProfile,
+  ProgressionProfileId,
+  XPNotificationItem,
+} from './game/progression/PlayerProgressTypes';
 import { GameStats, statsManager } from './game/progression/StatsManager';
+import { getTitleById } from './game/progression/TitleRegistry';
 import { missionManager } from './game/missions/MissionManager';
 import {
   MissionCompletionNotification,
@@ -46,12 +54,15 @@ import { CharacterUnlockPopup } from './ui/CharacterUnlockPopup';
 import { CountdownOverlay } from './ui/CountdownOverlay';
 import { GameOverOverlay } from './ui/GameOverOverlay';
 import { LeaderboardUI } from './ui/LeaderboardUI';
+import { LevelUpOverlay } from './ui/LevelUpOverlay';
 import { MainMenu } from './ui/MainMenu';
 import { MatchResultOverlay } from './ui/MatchResultOverlay';
 import { MissionCenterScreen } from './ui/MissionCenterScreen';
 import { MissionNotificationToast } from './ui/MissionNotificationToast';
 import { OfflineIndicator } from './ui/OfflineIndicator';
 import { PauseOverlay } from './ui/PauseOverlay';
+import { PlayerProfileScreen } from './ui/PlayerProfileScreen';
+import { PlayerProgressionScreen, ProgressionTab } from './ui/PlayerProgressionScreen';
 import { PowerUpHUD } from './ui/PowerUpHUD';
 import { PowerUpNotification } from './ui/PowerUpNotification';
 import { PrivacyModal } from './ui/PrivacyModal';
@@ -67,6 +78,7 @@ import { TwoPlayerSetup } from './ui/TwoPlayerSetup';
 import { WorldCollectionScreen } from './ui/WorldCollectionScreen';
 import { WorldSelectScreen } from './ui/WorldSelectScreen';
 import { WorldUnlockPopup } from './ui/WorldUnlockPopup';
+import { XPNotificationToast } from './ui/XPNotificationToast';
 import { WorldDefinition, WorldId } from './game/worlds/WorldRegistry';
 import { worldUnlockManager } from './game/worlds/WorldUnlockManager';
 
@@ -108,6 +120,22 @@ export default function App() {
   const [missionSnapshot, setMissionSnapshot] = useState<MissionSnapshot>(() =>
     missionManager.getSnapshot()
   );
+  const [soloProfile, setSoloProfile] = useState<PlayerProgressProfile>(() =>
+    playerProgressionManager.getProfile('solo')
+  );
+  const [p1Profile, setP1Profile] = useState<PlayerProgressProfile>(() =>
+    playerProgressionManager.getProfile('player1')
+  );
+  const [p2Profile, setP2Profile] = useState<PlayerProgressProfile>(() =>
+    playerProgressionManager.getProfile('player2')
+  );
+  const [xpToastQueue, setXpToastQueue] = useState<XPNotificationItem[]>(() =>
+    playerProgressionManager.getPendingXPNotifications()
+  );
+  const [levelUpQueue, setLevelUpQueue] = useState<LevelUpEvent[]>(() =>
+    playerProgressionManager.getPendingLevelUps()
+  );
+  const [progressionInitialTab, setProgressionInitialTab] = useState<ProgressionTab>('rewards');
   const [missionQueue, setMissionQueue] = useState<MissionCompletionNotification[]>([]);
   const [achievementQueue, setAchievementQueue] = useState<AchievementRecord[]>([]);
   const [characterUnlockQueue, setCharacterUnlockQueue] = useState<CharacterDefinition[]>([]);
@@ -170,6 +198,7 @@ export default function App() {
     latestPowerUpBanner: null,
     runCoinsCollected: 0,
     runGemsCollected: 0,
+    runXPGained: 0,
   });
 
   const consumeCurrentAchievement = useCallback(() => {
@@ -231,6 +260,15 @@ export default function App() {
         setMissionQueue((prev) => [...prev, note]);
       }
     });
+    const unsubProgression = playerProgressionManager.subscribe(() => {
+      setSoloProfile(playerProgressionManager.getProfile('solo'));
+      setP1Profile(playerProgressionManager.getProfile('player1'));
+      setP2Profile(playerProgressionManager.getProfile('player2'));
+    });
+    const unsubProgressionQueues = playerProgressionManager.subscribeQueues(() => {
+      setXpToastQueue(playerProgressionManager.getPendingXPNotifications());
+      setLevelUpQueue(playerProgressionManager.getPendingLevelUps());
+    });
     return () => {
       unsubSettings();
       unsubAchievements();
@@ -244,6 +282,8 @@ export default function App() {
       unsubCurrency();
       unsubMissions();
       unsubMissionNotes();
+      unsubProgression();
+      unsubProgressionQueues();
     };
   }, []);
 
@@ -448,6 +488,8 @@ export default function App() {
         currentState === 'LEADERBOARD' ||
         currentState === 'ACHIEVEMENTS' ||
         currentState === 'MISSION_CENTER' ||
+        currentState === 'PLAYER_PROGRESSION' ||
+        currentState === 'PLAYER_PROFILE' ||
         currentState === 'STATS' ||
         currentState === 'SETTINGS' ||
         currentState === 'ABOUT' ||
@@ -610,6 +652,15 @@ export default function App() {
           onOpenMissionCenter={() => gameRef.current?.setMenuState('MISSION_CENTER')}
         />
 
+        {/* NON-BLOCKING XP NOTIFICATION TOAST */}
+        <XPNotificationToast
+          queue={xpToastQueue}
+          enabled={settings.xpNotificationsEnabled}
+          suppressed={achievementQueue.length > 0 || missionQueue.length > 0}
+          isPlaying={isFlightOrCountdown}
+          onConsumeCurrent={(id) => playerProgressionManager.consumeXPNotification(id)}
+        />
+
         {/* NON-BLOCKING NEW BEST HUD CELEBRATION */}
         {uiState.state === 'PLAYING' && showNewBestBanner && (
           <div className="pointer-events-none absolute top-24 left-1/2 z-20 -translate-x-1/2">
@@ -705,7 +756,12 @@ export default function App() {
               unclaimedMissions={missionSnapshot.unclaimed.total}
               missionReminderEnabled={settings.missionReminderEnabled}
               equippedMissionTitle={missionSnapshot.cosmetics.equippedTitle}
-              equippedMissionFrame={missionSnapshot.cosmetics.equippedFrame}
+              equippedMissionFrame={soloProfile.equippedFrameId}
+              playerLevel={soloProfile.currentLevel}
+              playerRankName={soloProfile.rank.name}
+              playerRankIcon={soloProfile.rank.icon}
+              playerTitleName={getTitleById(soloProfile.equippedTitleId).name}
+              unclaimedLevelRewards={playerProgressionManager.getUnclaimedRewardLevels('solo').length}
               onPlay={() => gameRef.current?.startReady()}
               onTwoPlayer={() => {
                 const current = loadStoredPlayerNames();
@@ -737,6 +793,11 @@ export default function App() {
               onMissions={() => {
                 missionManager.ensureCurrentPeriods();
                 gameRef.current?.setMenuState('MISSION_CENTER');
+              }}
+              onProfile={() => gameRef.current?.setMenuState('PLAYER_PROFILE')}
+              onProgression={() => {
+                setProgressionInitialTab('rewards');
+                gameRef.current?.setMenuState('PLAYER_PROGRESSION');
               }}
               onCharacters={() => {
                 setCharEditorTarget('default');
@@ -1006,6 +1067,69 @@ export default function App() {
           </div>
         )}
 
+        {/* PLAYER PROGRESSION & LEVEL REWARDS SCREEN */}
+        {uiState.state === 'PLAYER_PROGRESSION' && (
+          <div className="absolute inset-0 z-20">
+            <PlayerProgressionScreen
+              profile={soloProfile}
+              initialTab={progressionInitialTab}
+              onOpenProfile={() => gameRef.current?.setMenuState('PLAYER_PROFILE')}
+              onRewardClaimed={() => gameRef.current?.syncExternalVisuals()}
+              onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
+            />
+          </div>
+        )}
+
+        {/* PLAYER PROFILE SCREEN */}
+        {uiState.state === 'PLAYER_PROFILE' && (
+          <div className="absolute inset-0 z-20">
+            <PlayerProfileScreen
+              soloProfile={soloProfile}
+              p1Profile={p1Profile}
+              p2Profile={p2Profile}
+              stats={stats}
+              bestScore={uiState.bestScore}
+              missionStats={missionSnapshot.stats}
+              achievementsUnlocked={unlockedCount}
+              achievementsTotal={achievements.length}
+              charsUnlocked={collectionSummary.unlockedCount}
+              charsTotal={collectionSummary.totalCount}
+              worldsUnlocked={worldSummary.unlockedCount}
+              worldsTotal={worldSummary.totalCount}
+              customFaceImg={customFaceImg}
+              p1FaceImg={player1FaceImg}
+              p2FaceImg={player2FaceImg}
+              activeCharacterId={defaultSelection.characterId}
+              activeSkinId={defaultSkinId}
+              isCustomFaceActive={
+                defaultSelection.mode === 'custom_face' && Boolean(customFaceImg)
+              }
+              p1Selection={p1Selection}
+              p2Selection={p2Selection}
+              p1SkinId={p1SkinId}
+              p2SkinId={p2SkinId}
+              onRenameSlot={(slot: ProgressionProfileId, newName: string) => {
+                if (slot === 'player1') {
+                  const cur = loadStoredPlayerNames();
+                  setTwoPlayerDraftNames(
+                    saveStoredPlayerNames(newName, cur.player2Name, cur.preferredFormat)
+                  );
+                } else if (slot === 'player2') {
+                  const cur = loadStoredPlayerNames();
+                  setTwoPlayerDraftNames(
+                    saveStoredPlayerNames(cur.player1Name, newName, cur.preferredFormat)
+                  );
+                }
+              }}
+              onOpenProgression={(tab = 'rewards') => {
+                setProgressionInitialTab(tab);
+                gameRef.current?.setMenuState('PLAYER_PROGRESSION');
+              }}
+              onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
+            />
+          </div>
+        )}
+
         {/* STATS SCREEN */}
         {uiState.state === 'STATS' && (
           <div className="absolute inset-0 z-20">
@@ -1134,6 +1258,37 @@ export default function App() {
           />
         )}
 
+        {/* LEVEL UP REWARD POPUP (SUPPRESSED DURING FLIGHT & HIGHER PRIORITY POPUPS) */}
+        {!isFlightOrCountdown &&
+          uiState.state !== 'PLAYER_2_TRANSITION' &&
+          uiState.state !== 'ROUND_RESULT' &&
+          achievementQueue.length === 0 &&
+          characterUnlockQueue.length === 0 &&
+          worldUnlockQueue.length === 0 &&
+          levelUpQueue.length > 0 && (() => {
+            const activeEv = levelUpQueue[0];
+            const targetProfile =
+              activeEv.profileId === 'player1'
+                ? p1Profile
+                : activeEv.profileId === 'player2'
+                  ? p2Profile
+                  : soloProfile;
+            return (
+              <LevelUpOverlay
+                event={activeEv}
+                playerName={targetProfile.playerName}
+                progressPercent={targetProfile.progressPercent}
+                animationEnabled={settings.levelUpAnimationEnabled}
+                reducedMotion={settings.reducedMotion}
+                onOpenRewards={() => {
+                  setProgressionInitialTab('rewards');
+                  gameRef.current?.setMenuState('PLAYER_PROGRESSION');
+                }}
+                onContinue={(id) => playerProgressionManager.consumeLevelUp(id)}
+              />
+            );
+          })()}
+
         {/* PRIVACY POLICY MODAL */}
         {showPrivacyModal && <PrivacyModal onClose={() => setShowPrivacyModal(false)} />}
 
@@ -1203,6 +1358,7 @@ export default function App() {
             }
             runCoins={uiState.runCoinsCollected}
             runGems={uiState.runGemsCollected}
+            runXP={uiState.runXPGained}
             onRetry={() => gameRef.current?.restart()}
             onHome={() => gameRef.current?.setMenuState('MAIN_MENU')}
           />
@@ -1285,6 +1441,10 @@ export default function App() {
             player1SkinId={p1SkinId}
             player2CharacterId={p2Selection.characterId}
             player2SkinId={p2SkinId}
+            player1Level={p1Profile.currentLevel}
+            player1Title={getTitleById(p1Profile.equippedTitleId).name}
+            player2Level={p2Profile.currentLevel}
+            player2Title={getTitleById(p2Profile.equippedTitleId).name}
             winnerWinStreak={
               uiState.twoPlayerMatch.winner === 'player1'
                 ? (leaderboardManager.getPlayerStats(

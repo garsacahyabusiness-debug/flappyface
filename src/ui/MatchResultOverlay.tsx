@@ -15,6 +15,10 @@ interface MatchResultOverlayProps {
   player1SkinId?: SkinId;
   player2CharacterId?: string;
   player2SkinId?: SkinId;
+  player1Level?: number;
+  player1Title?: string;
+  player2Level?: number;
+  player2Title?: string;
   winnerWinStreak?: number;
   onRematch: () => void;
   onChangePlayer: () => void;
@@ -29,6 +33,10 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
   player1SkinId = 'default',
   player2CharacterId = 'chicky',
   player2SkinId = 'default',
+  player1Level = 1,
+  player1Title = 'Newbie Flyer',
+  player2Level = 1,
+  player2Title = 'Newbie Flyer',
   winnerWinStreak = 0,
   onRematch,
   onChangePlayer,
@@ -135,6 +143,9 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
             <div className="mt-1 max-w-full truncate text-xs font-black text-[#24415C]">
               {match.player1Name}
             </div>
+            <div className="mt-0.5 max-w-full truncate rounded-full border border-[#24415C]/20 bg-white/90 px-2 py-0.5 text-[9px] font-black text-[#24415C]/80 tabular-nums">
+              Lv.{player1Level} · {player1Title}
+            </div>
             <div className="my-0.5">
               <CharacterShowcaseCanvas
                 customFaceImg={player1FaceImg}
@@ -170,6 +181,9 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
             </span>
             <div className="mt-1 max-w-full truncate text-xs font-black text-[#24415C]">
               {match.player2Name}
+            </div>
+            <div className="mt-0.5 max-w-full truncate rounded-full border border-[#24415C]/20 bg-white/90 px-2 py-0.5 text-[9px] font-black text-[#24415C]/80 tabular-nums">
+              Lv.{player2Level} · {player2Title}
             </div>
             <div className="my-0.5">
               <CharacterShowcaseCanvas

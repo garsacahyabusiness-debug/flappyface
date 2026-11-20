@@ -543,4 +543,16 @@ export const AVATAR_FRAME_META: Record<
     ringClass: 'ring-2 ring-orange-500',
     borderColor: '#EA580C',
   },
+  elite_azure: {
+    id: 'elite_azure',
+    name: 'Elite Azure',
+    ringClass: 'ring-2 ring-cyan-400',
+    borderColor: '#06B6D4',
+  },
+  ultimate_legend: {
+    id: 'ultimate_legend',
+    name: 'Ultimate Legend',
+    ringClass: 'ring-[3px] ring-amber-400',
+    borderColor: '#EC4899',
+  },
 };

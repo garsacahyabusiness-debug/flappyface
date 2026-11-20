@@ -25,6 +25,7 @@ import { audioManager } from '../game/audio/AudioManager';
 import { characterUnlockManager } from '../game/character/CharacterUnlockManager';
 import { VisualEffectsQuality } from '../game/powerups/PowerUpManager';
 import { PowerUpFrequencySetting } from '../game/powerups/PowerUpSpawnManager';
+import { playerProgressionManager } from '../game/progression/PlayerProgressionManager';
 import { GameSettings, settingsManager } from '../game/settings/SettingsManager';
 import { vibrationManager } from '../game/settings/VibrationManager';
 import { GraphicsPreset } from '../game/worlds/EnvironmentRenderer';
@@ -98,6 +99,8 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
   const vibrationSupported = vibrationManager.isSupported();
   const audioSupported = audioManager.isAudioSupported();
   const collectionSummary = characterUnlockManager.getCollectionSummary();
+  const hasAuroraThemeUnlocked =
+    collectionSummary.hasSpecialBackground || playerProgressionManager.hasExclusiveWorldTheme('solo');
   const activeWorld = getWorldById(worldUnlockManager.getSelectedWorldId());
 
   useEffect(() => {
@@ -158,7 +161,7 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
   };
 
   const handleToggleSkyTheme = () => {
-    if (!collectionSummary.hasSpecialBackground) return;
+    if (!hasAuroraThemeUnlocked) return;
     audioManager.playButton();
     settingsManager.update({
       skyTheme: settings.skyTheme === 'special' ? 'classic' : 'special',
@@ -405,15 +408,15 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                   <div>
                     <div className="text-sm font-extrabold text-[#24415C]">AURORA SKY</div>
                     <div className="text-[10px] font-bold text-[#24415C]/60">
-                      {collectionSummary.hasSpecialBackground
+                      {hasAuroraThemeUnlocked
                         ? settings.skyTheme === 'special'
                           ? 'Special Sunset Sky Active'
                           : 'Classic Blue Sky Active'
-                        : `Unlock at 50% Collection (${collectionSummary.percent}%)`}
+                        : `50% Collection (${collectionSummary.percent}%) or Level 40`}
                     </div>
                   </div>
                 </div>
-                {collectionSummary.hasSpecialBackground ? (
+                {hasAuroraThemeUnlocked ? (
                   <ToggleSwitch
                     checked={settings.skyTheme === 'special'}
                     label="Toggle Special Aurora Sky"
@@ -422,7 +425,7 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
                     <Lock className="h-3 w-3" />
-                    <span>50%</span>
+                    <span>LV.40</span>
                   </span>
                 )}
               </div>
@@ -757,6 +760,73 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                     settingsManager.update({
                       missionReminderEnabled: !settings.missionReminderEnabled,
                     });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* LEVEL & PROGRESSION SECTION */}
+          <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
+            <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">
+              LEVEL &amp; PROGRESSION
+            </h3>
+
+            <div className="mt-2.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Bell className="h-4 w-4 text-[#32B85C]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    XP NOTIFICATIONS
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.xpNotificationsEnabled}
+                  label="Toggle XP Notifications"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      xpNotificationsEnabled: !settings.xpNotificationsEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#F59E0B]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    LEVEL-UP ANIMATION
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.levelUpAnimationEnabled}
+                  label="Toggle Level-Up Animation"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      levelUpAnimationEnabled: !settings.levelUpAnimationEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Volume2 className="h-4 w-4 text-[#3998F7]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    PROGRESSION SOUND
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.progressionSoundsEnabled}
+                  disabled={!audioSupported || !settings.sfxEnabled}
+                  label="Toggle Progression Sound"
+                  onToggle={() => {
+                    audioManager.unlock();
+                    const next = !settings.progressionSoundsEnabled;
+                    settingsManager.update({ progressionSoundsEnabled: next });
+                    if (next) audioManager.playButton();
                   }}
                 />
               </div>

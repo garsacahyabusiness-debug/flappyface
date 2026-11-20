@@ -269,6 +269,44 @@ export class SoundGenerator {
     });
   }
 
+  public playXPReceived(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 783.99, 'sine', now, 0.055, 0.11);
+    this.playTone(ctx, output, 1046.5, 'sine', now + 0.035, 0.09, 0.12);
+  }
+
+  public playLevelUp(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'triangle', now + idx * 0.055, 0.24, 0.18);
+    });
+  }
+
+  public playRewardUnlocked(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [659.25, 880.0, 1174.66, 1567.98];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'sine', now + idx * 0.05, 0.19, 0.17);
+    });
+  }
+
+  public playRankPromotion(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [587.33, 739.99, 880.0, 1174.66, 1479.98, 1760.0];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'triangle', now + idx * 0.06, 0.26, 0.19);
+    });
+  }
+
+  public playTitleUnlocked(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [783.99, 987.77, 1318.51, 1567.98];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'triangle', now + idx * 0.055, 0.2, 0.16);
+    });
+  }
+
   private playTone(
     ctx: AudioContext,
     output: GainNode,

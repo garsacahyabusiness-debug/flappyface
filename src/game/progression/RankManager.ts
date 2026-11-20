@@ -1,0 +1,136 @@
+import { MAX_PLAYER_LEVEL, MIN_PLAYER_LEVEL } from './LevelCurve';
+import { PlayerRankTier } from './PlayerProgressTypes';
+
+export const PLAYER_RANK_TIERS: readonly PlayerRankTier[] = [
+  {
+    id: 'rookie',
+    minLevel: 1,
+    maxLevel: 9,
+    name: 'ROOKIE',
+    icon: '🐣',
+    badgeBg: 'bg-slate-200',
+    badgeText: 'text-slate-800',
+    borderColor: '#94A3B8',
+    gradientClass: 'from-slate-100 to-slate-200',
+  },
+  {
+    id: 'beginner_flyer',
+    minLevel: 10,
+    maxLevel: 19,
+    name: 'BEGINNER FLYER',
+    icon: '🐤',
+    badgeBg: 'bg-emerald-200',
+    badgeText: 'text-emerald-900',
+    borderColor: '#22C55E',
+    gradientClass: 'from-emerald-100 to-green-200',
+  },
+  {
+    id: 'skilled_flyer',
+    minLevel: 20,
+    maxLevel: 29,
+    name: 'SKILLED FLYER',
+    icon: '🪽',
+    badgeBg: 'bg-sky-200',
+    badgeText: 'text-sky-900',
+    borderColor: '#38BDF8',
+    gradientClass: 'from-sky-100 to-blue-200',
+  },
+  {
+    id: 'advanced_flyer',
+    minLevel: 30,
+    maxLevel: 39,
+    name: 'ADVANCED FLYER',
+    icon: '⭐',
+    badgeBg: 'bg-blue-200',
+    badgeText: 'text-blue-950',
+    borderColor: '#3998F7',
+    gradientClass: 'from-blue-100 to-indigo-200',
+  },
+  {
+    id: 'expert',
+    minLevel: 40,
+    maxLevel: 49,
+    name: 'EXPERT',
+    icon: '🔥',
+    badgeBg: 'bg-orange-200',
+    badgeText: 'text-orange-950',
+    borderColor: '#F97316',
+    gradientClass: 'from-orange-100 to-amber-200',
+  },
+  {
+    id: 'veteran',
+    minLevel: 50,
+    maxLevel: 59,
+    name: 'VETERAN',
+    icon: '🏆',
+    badgeBg: 'bg-amber-200',
+    badgeText: 'text-amber-950',
+    borderColor: '#D97706',
+    gradientClass: 'from-amber-100 to-yellow-200',
+  },
+  {
+    id: 'elite',
+    minLevel: 60,
+    maxLevel: 69,
+    name: 'ELITE',
+    icon: '💎',
+    badgeBg: 'bg-cyan-200',
+    badgeText: 'text-cyan-950',
+    borderColor: '#06B6D4',
+    gradientClass: 'from-cyan-100 to-sky-200',
+  },
+  {
+    id: 'master',
+    minLevel: 70,
+    maxLevel: 79,
+    name: 'MASTER',
+    icon: '👑',
+    badgeBg: 'bg-purple-200',
+    badgeText: 'text-purple-950',
+    borderColor: '#9333EA',
+    gradientClass: 'from-purple-100 to-fuchsia-200',
+  },
+  {
+    id: 'grandmaster',
+    minLevel: 80,
+    maxLevel: 89,
+    name: 'GRANDMASTER',
+    icon: '🌌',
+    badgeBg: 'bg-indigo-300',
+    badgeText: 'text-indigo-950',
+    borderColor: '#6366F1',
+    gradientClass: 'from-indigo-100 to-purple-200',
+  },
+  {
+    id: 'legend',
+    minLevel: 90,
+    maxLevel: 99,
+    name: 'LEGEND',
+    icon: '⚡',
+    badgeBg: 'bg-amber-300',
+    badgeText: 'text-amber-950',
+    borderColor: '#F59E0B',
+    gradientClass: 'from-yellow-200 to-orange-200',
+  },
+  {
+    id: 'ultimate_legend',
+    minLevel: 100,
+    maxLevel: 100,
+    name: 'ULTIMATE LEGEND',
+    icon: '🌟',
+    badgeBg: 'bg-gradient-to-r from-[#FFD84D] via-[#F472B6] to-[#38BDF8]',
+    badgeText: 'text-[#24415C]',
+    borderColor: '#EC4899',
+    gradientClass: 'from-amber-200 via-pink-200 to-sky-200',
+  },
+];
+
+export function getRankForLevel(level: number): PlayerRankTier {
+  const clamped = Math.max(MIN_PLAYER_LEVEL, Math.min(MAX_PLAYER_LEVEL, Math.floor(level)));
+  for (const tier of PLAYER_RANK_TIERS) {
+    if (clamped >= tier.minLevel && clamped <= tier.maxLevel) {
+      return tier;
+    }
+  }
+  return PLAYER_RANK_TIERS[0];
+}

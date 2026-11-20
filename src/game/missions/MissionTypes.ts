@@ -29,7 +29,9 @@ export type AvatarFrameId =
   | 'gold_champion'
   | 'perfect_wings'
   | 'cosmic_explorer'
-  | 'streak_flame';
+  | 'streak_flame'
+  | 'elite_azure'
+  | 'ultimate_legend';
 
 export interface MissionReward {
   coins: number;

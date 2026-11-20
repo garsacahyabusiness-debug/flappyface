@@ -6,12 +6,14 @@ import {
   ClipboardCheck,
   Compass,
   Crown,
+  Gift,
   Info,
   Play,
   Settings,
   Sparkles,
   Swords,
   Trophy,
+  User,
   Users,
 } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
@@ -45,11 +47,18 @@ interface MainMenuProps {
   missionReminderEnabled: boolean;
   equippedMissionTitle: string | null;
   equippedMissionFrame: AvatarFrameId;
+  playerLevel: number;
+  playerRankName: string;
+  playerRankIcon: string;
+  playerTitleName: string;
+  unclaimedLevelRewards: number;
   onPlay: () => void;
   onTwoPlayer: () => void;
   onTournament: () => void;
   onWorlds: () => void;
   onMissions: () => void;
+  onProfile: () => void;
+  onProgression: () => void;
   onCharacters: () => void;
   onLeaderboard: () => void;
   onChangeFace: () => void;
@@ -80,11 +89,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   missionReminderEnabled,
   equippedMissionTitle,
   equippedMissionFrame,
+  playerLevel,
+  playerRankName,
+  playerRankIcon,
+  playerTitleName,
+  unclaimedLevelRewards,
   onPlay,
   onTwoPlayer,
   onTournament,
   onWorlds,
   onMissions,
+  onProfile,
+  onProgression,
   onCharacters,
   onLeaderboard,
   onChangeFace,
@@ -97,6 +113,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const rarity = RARITY_META[activeChar.rarity];
   const activeWorld = getWorldById(activeWorldId);
   const frameMeta = AVATAR_FRAME_META[equippedMissionFrame] ?? AVATAR_FRAME_META.default;
+  const displayTitle = equippedMissionTitle ?? playerTitleName;
 
   return (
     <div className="anim-fade-in relative z-20 flex h-full w-full flex-col justify-between overflow-y-auto px-4 pt-safe pb-safe sm:px-5">
@@ -121,7 +138,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             className="anim-sparkle absolute -top-2 -right-7 h-6 w-6 text-[#FFD84D] drop-shadow-[0_2px_0_#24415C]"
           />
 
-          <h1 className="font-display text-stroke-logo text-[2.15rem] leading-[0.94] font-bold tracking-wide text-white sm:text-[2.55rem]">
+          <h1 className="font-display text-stroke-logo text-[2.1rem] leading-[0.94] font-bold tracking-wide text-white sm:text-[2.45rem]">
             FLAPPY
             <span className="mt-0.5 block text-[#FFD84D]">FACE</span>
           </h1>
@@ -144,6 +161,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
           <CurrencyDisplay coins={coins} gems={gems} compact />
 
+          <button
+            type="button"
+            onClick={() => {
+              audioManager.playButton();
+              onProfile();
+            }}
+            className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-gradient-to-r from-[#FFF9DB] to-[#FDE047] px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C] active:translate-y-0.5"
+          >
+            <span aria-hidden="true">{playerRankIcon}</span>
+            <span className="tabular-nums">LV.{playerLevel}</span>
+            <span>·</span>
+            <span>{playerRankName}</span>
+            <span>·</span>
+            <span className="max-w-[92px] truncate text-[#0369A1]">{displayTitle}</span>
+          </button>
+
           {hasLegendTitle && (
             <div className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-gradient-to-r from-[#FFD84D] to-[#F472B6] px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]">
               <Crown className="h-3 w-3" />
@@ -157,18 +190,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               <span>WORLD EXPLORER</span>
             </div>
           )}
-
-          {equippedMissionTitle && (
-            <div className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-gradient-to-r from-[#FDE047] to-[#FB923C] px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]">
-              <Sparkles className="h-3 w-3" />
-              <span>{equippedMissionTitle}</span>
-            </div>
-          )}
         </div>
       </header>
 
-      {/* Center: Animated Character Showcase & Active World / Mission Bar */}
-      <div className="flex min-h-[78px] flex-1 flex-col items-center justify-center overflow-hidden py-0.5">
+      {/* Center: Animated Character Showcase & Active World / Mission / Progression Bar */}
+      <div className="flex min-h-[76px] flex-1 flex-col items-center justify-center overflow-hidden py-0.5">
         <div
           className={`rounded-full p-0.5 ${
             equippedMissionFrame !== 'default' ? frameMeta.ringClass : ''
@@ -179,7 +205,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             characterId={activeCharacterId}
             skinId={activeSkinId}
             rarity={isCustomFaceActive ? undefined : activeChar.rarity}
-            size={96}
+            size={84}
             animate={true}
           />
         </div>
@@ -225,6 +251,38 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-[#24415C] bg-[#FF6B6B] px-1 text-[9px] font-black tabular-nums text-white"
               >
                 {unclaimedMissions}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              audioManager.playButton();
+              onProfile();
+            }}
+            className="btn-base btn-secondary min-h-[34px] rounded-full px-2.5 py-0.5 text-[10px]"
+          >
+            <User className="h-3.5 w-3.5 shrink-0 text-[#3998F7]" />
+            <span>PROFILE</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              audioManager.playButton();
+              onProgression();
+            }}
+            className="btn-base btn-secondary min-h-[34px] rounded-full px-2.5 py-0.5 text-[10px]"
+          >
+            <Gift className="h-3.5 w-3.5 shrink-0 text-[#F59E0B]" />
+            <span>LEVELS</span>
+            {unclaimedLevelRewards > 0 && (
+              <span
+                aria-label={`${unclaimedLevelRewards} level rewards ready`}
+                className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-[#24415C] bg-[#61D66B] px-1 text-[9px] font-black tabular-nums text-[#24415C]"
+              >
+                {unclaimedLevelRewards}
               </span>
             )}
           </button>

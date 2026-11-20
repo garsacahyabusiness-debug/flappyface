@@ -1,4 +1,5 @@
 import { currencyManager, PowerUpCurrencyStats } from '../powerups/CurrencyManager';
+import { playerProgressionManager } from './PlayerProgressionManager';
 
 export type AchievementIconName =
   | 'feather'
@@ -231,6 +232,7 @@ export class AchievementManager {
           rec.rewardCoins,
           rec.rewardGems
         );
+        playerProgressionManager.recordAchievementXP(rec.id, rec.name);
         newlyUnlocked.push({ ...rec });
       }
     }
@@ -286,6 +288,7 @@ export class AchievementManager {
           rec.rewardCoins,
           rec.rewardGems
         );
+        playerProgressionManager.recordAchievementXP(rec.id, rec.name);
         newlyUnlocked.push({ ...rec });
       }
     }

@@ -1,3 +1,4 @@
+import { playerProgressionManager } from '../progression/PlayerProgressionManager';
 import { CharacterSlot } from './CharacterStorage';
 
 export type SkinId =
@@ -251,6 +252,8 @@ export class CharacterSkinManager {
       if (item.met && !this.unlockedSkins.has(item.id)) {
         this.unlockedSkins.add(item.id);
         newlyUnlocked.push(item.id);
+        const def = getSkinById(item.id);
+        playerProgressionManager.recordSkinUnlockXP(def.id, def.name, 'gameplay');
       }
     }
 
@@ -261,13 +264,20 @@ export class CharacterSkinManager {
     return newlyUnlocked;
   }
 
-  public unlockMilestoneSkin(skinId: SkinId): boolean {
+  public unlockMilestoneSkin(
+    skinId: SkinId,
+    source: 'milestone' | 'level_reward' = 'milestone'
+  ): boolean {
     if (!SKIN_MAP.has(skinId) || this.unlockedSkins.has(skinId)) {
       return false;
     }
     this.unlockedSkins.add(skinId);
     this.save();
     this.notify();
+    if (source !== 'level_reward') {
+      const def = getSkinById(skinId);
+      playerProgressionManager.recordSkinUnlockXP(def.id, def.name, source);
+    }
     return true;
   }
 

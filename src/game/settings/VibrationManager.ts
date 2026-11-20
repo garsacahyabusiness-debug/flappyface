@@ -52,6 +52,10 @@ export class VibrationManager {
   public vibrateDraw(): void {
     this.trigger([22, 30, 22]);
   }
+
+  public vibrateLevelUp(): void {
+    this.trigger([20, 25, 35, 25, 55]);
+  }
 }
 
 export const vibrationManager = new VibrationManager();

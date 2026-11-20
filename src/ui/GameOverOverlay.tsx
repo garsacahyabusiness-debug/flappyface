@@ -16,6 +16,7 @@ interface GameOverOverlayProps {
   customFaceImg?: HTMLImageElement | null;
   runCoins?: number;
   runGems?: number;
+  runXP?: number;
   onRetry: () => void;
   onHome: () => void;
 }
@@ -30,6 +31,7 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
   customFaceImg = null,
   runCoins = 0,
   runGems = 0,
+  runXP = 0,
   onRetry,
   onHome,
 }) => {
@@ -142,9 +144,14 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
           </div>
         </div>
 
-        {(runCoins > 0 || runGems > 0) && (
-          <div className="mt-2.5 flex items-center justify-center gap-3 rounded-xl border-2 border-[#24415C]/15 bg-[#FFF9DB] px-3 py-1 text-xs font-black text-[#24415C]">
+        {(runCoins > 0 || runGems > 0 || runXP > 0) && (
+          <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2.5 rounded-xl border-2 border-[#24415C]/15 bg-[#FFF9DB] px-3 py-1 text-xs font-black text-[#24415C]">
             <span className="text-[10px] tracking-wider text-[#24415C]/65 uppercase">Earned</span>
+            {runXP > 0 && (
+              <span className="inline-flex items-center gap-1 text-[#15803D] tabular-nums">
+                <span aria-hidden="true">✨</span>+{runXP} XP
+              </span>
+            )}
             {runCoins > 0 && (
               <span className="inline-flex items-center gap-1 tabular-nums">
                 <span aria-hidden="true">🪙</span>+{runCoins}

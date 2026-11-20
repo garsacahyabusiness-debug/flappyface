@@ -189,6 +189,18 @@ async function runTests(): Promise<void> {
       SPECIAL_CHALLENGES,
       STREAK_MILESTONES,
     },
+    {
+      MAX_PLAYER_LEVEL,
+      MIN_PLAYER_LEVEL,
+      getXPRequiredForLevel,
+      getCumulativeXPForLevel,
+      computeLevelStateFromTotalXP,
+    },
+    { PLAYER_RANK_TIERS, getRankForLevel },
+    { TITLE_REGISTRY, getTitleById },
+    { LEVEL_REWARD_TRACK, LEVEL_REWARD_MAP, getNextLevelReward },
+    { PlayerProgressionManager, playerProgressionManager },
+    { claimLevelRewardWithGrant },
   ] = await Promise.all([
     import('../src/game/Config'),
     import('../src/game/Physics'),
@@ -226,6 +238,12 @@ async function runTests(): Promise<void> {
     import('../src/game/missions/MissionManager'),
     import('../src/game/missions/MissionDateUtils'),
     import('../src/game/missions/MissionRegistry'),
+    import('../src/game/progression/LevelCurve'),
+    import('../src/game/progression/RankManager'),
+    import('../src/game/progression/TitleRegistry'),
+    import('../src/game/progression/LevelRewardRegistry'),
+    import('../src/game/progression/PlayerProgressionManager'),
+    import('../src/game/progression/LevelRewardService'),
   ]);
 
   let passed = 0;
@@ -1908,6 +1926,344 @@ async function runTests(): Promise<void> {
     assert.notEqual(jsMM.getSnapshot().weeklyPeriodKey, sundayWeeklyKey);
 
     unsub();
+  });
+
+  // 33. Level Curve, Carry-Over Multi-Level Up, Level 100 Cap & 11 Ranks
+  await runCase('XP curve computes carry-over multi-level ups, enforces Level 100 cap, and maps all 11 Ranks accurately', () => {
+    assert.equal(MIN_PLAYER_LEVEL, 1);
+    assert.equal(MAX_PLAYER_LEVEL, 100);
+    assert.equal(getXPRequiredForLevel(1), 136);
+    assert.equal(getXPRequiredForLevel(100), 0);
+
+    // Carry-over from Lv 1 -> Lv 3 in single burst (136 + 176 = 312 XP required for Lv 3; +400 gives Lv 3 with 88 XP carry-over)
+    const lv1to2 = getXPRequiredForLevel(1);
+    const lv2to3 = getXPRequiredForLevel(2);
+    const computedLv3 = computeLevelStateFromTotalXP(lv1to2 + lv2to3 + 88);
+    assert.equal(computedLv3.currentLevel, 3);
+    assert.equal(computedLv3.currentLevelXP, 88);
+    assert.equal(computedLv3.isMaxLevel, false);
+
+    // Level 100 cap preserves totalXP without overflowing past Level 100
+    const xpForLv100 = getCumulativeXPForLevel(100);
+    const capped = computeLevelStateFromTotalXP(xpForLv100 + 50000);
+    assert.equal(capped.currentLevel, 100);
+    assert.equal(capped.isMaxLevel, true);
+    assert.equal(capped.progressPercent, 100);
+
+    // Verify all 11 rank tiers
+    assert.equal(PLAYER_RANK_TIERS.length, 11);
+    assert.equal(getRankForLevel(1).name, 'ROOKIE');
+    assert.equal(getRankForLevel(9).name, 'ROOKIE');
+    assert.equal(getRankForLevel(10).name, 'BEGINNER FLYER');
+    assert.equal(getRankForLevel(20).name, 'SKILLED FLYER');
+    assert.equal(getRankForLevel(30).name, 'ADVANCED FLYER');
+    assert.equal(getRankForLevel(40).name, 'EXPERT');
+    assert.equal(getRankForLevel(50).name, 'VETERAN');
+    assert.equal(getRankForLevel(60).name, 'ELITE');
+    assert.equal(getRankForLevel(70).name, 'MASTER');
+    assert.equal(getRankForLevel(80).name, 'GRANDMASTER');
+    assert.equal(getRankForLevel(90).name, 'LEGEND');
+    assert.equal(getRankForLevel(100).name, 'ULTIMATE LEGEND');
+  });
+
+  // 34. Anti-Exploit Idempotency, Abort Mid-Run Safety & Personal Best XP
+  await runCase('PlayerProgressionManager enforces strict eventId idempotency, ignores aborted runs, and rewards Personal Best strictly on increase', () => {
+    storage.clear();
+    const pm = new PlayerProgressionManager(() => 1_700_000_000_000);
+    pm.reset(true);
+
+    // First grant succeeds and triggers multi-level up + rank promotion when reaching Lv 10
+    const xpNeededLv10 = getCumulativeXPForLevel(10);
+    const burst = pm.awardXP({
+      profileId: 'solo',
+      eventId: 'test_burst_1',
+      amount: xpNeededLv10,
+      label: 'TEST BURST',
+      category: 'gameplay',
+    });
+    assert.equal(burst.awarded, true);
+    assert.equal(burst.previousLevel, 1);
+    assert.equal(burst.newLevel, 10);
+    assert.equal(burst.levelsGained, 9);
+    assert.equal(burst.rankPromoted, true);
+    assert.equal(pm.getProfile('solo').rank.name, 'BEGINNER FLYER');
+
+    // Replay same eventId -> strictly ignored
+    const dup = pm.awardXP({
+      profileId: 'solo',
+      eventId: 'test_burst_1',
+      amount: 999,
+      label: 'REPLAY',
+      category: 'gameplay',
+    });
+    assert.equal(dup.awarded, false);
+    assert.equal(pm.getProfile('solo').totalXP, xpNeededLv10);
+
+    // Negative / zero XP rejected
+    assert.equal(
+      pm.awardXP({ profileId: 'solo', eventId: 'zero_xp', amount: 0, label: 'ZERO', category: 'gameplay' }).awarded,
+      false
+    );
+
+    // Aborting mid-run via setMenuState('MAIN_MENU') in Game must NOT grant game completion XP (+10)
+    playerProgressionManager.reset(true);
+    const game = new Game(createMockCanvas(), () => {});
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    assert.equal(game.getState(), 'PLAYING');
+    const xpBeforeAbort = playerProgressionManager.getProfile('solo').totalXP;
+    game.setMenuState('MAIN_MENU');
+    assert.equal(
+      playerProgressionManager.getProfile('solo').totalXP,
+      xpBeforeAbort,
+      'Quitting mid-run must not grant +10 completion XP'
+    );
+    assert.equal(playerProgressionManager.getProfile('solo').stats.totalGamesPlayed, 0);
+
+    // Personal Best XP fires strictly when newBest triggers (run 1 best=3 grants +25; run 2 score=2 does NOT)
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    for (let i = 0; i < 3; i++) {
+      const res = (
+        game as unknown as {
+          score: { addBonus: (pts: number, isGameOver?: boolean) => { newBestTriggered: boolean } };
+        }
+      ).score.addBonus(1, false);
+      (
+        game as unknown as {
+          handleScoreAdvance: (slot: null, newBest: boolean, spawnBurst: boolean) => void;
+        }
+      ).handleScoreAdvance(null, res.newBestTriggered, true);
+    }
+    const afterBestHist = playerProgressionManager.getXPHistory('solo', 'gameplay');
+    assert.equal(afterBestHist.filter((h) => h.label.startsWith('NEW HIGH SCORE')).length, 1);
+    game.destroy();
+  });
+
+  // 35. Level Rewards Track, Character Unlock Without Duplicate XP, Fallback Currency & Aurora Theme
+  await runCase('Level rewards claim atomically, unlock characters without duplicate collection XP, grant fallback currency when owned, and unlock Lv 40 Aurora Theme', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterUnlockManager.reset();
+    characterSkinManager.reset();
+    worldUnlockManager.reset();
+    missionManager.reset();
+    playerProgressionManager.reset(true);
+
+    // Reach Level 40
+    playerProgressionManager.awardXP({
+      profileId: 'solo',
+      eventId: 'reach_lv40',
+      amount: getCumulativeXPForLevel(40),
+      label: 'LEVEL 40',
+      category: 'gameplay',
+    });
+
+    assert.equal(playerProgressionManager.getProfile('solo').currentLevel, 40);
+    assert.ok(getNextLevelReward(40, [])?.level === 2);
+
+    // Claim Level 2 (+50 coins)
+    const c2 = claimLevelRewardWithGrant(2, 'solo');
+    assert.equal(c2.success, true);
+    assert.equal(c2.coinsGranted, 50);
+    assert.equal(currencyManager.getSnapshot().coins, 50);
+
+    // Duplicate claim Level 2 blocked
+    assert.equal(claimLevelRewardWithGrant(2, 'solo').success, false);
+    assert.equal(currencyManager.getSnapshot().coins, 50);
+
+    // Unreached Level 50 reward blocked
+    assert.equal(claimLevelRewardWithGrant(50, 'solo').success, false);
+
+    // Claim Level 10 (Rare Character Unlock) -> unlocks a RARE character WITHOUT awarding duplicate +50 Collection XP
+    const xpBeforeLv10Claim = playerProgressionManager.getProfile('solo').totalXP;
+    const c10 = claimLevelRewardWithGrant(10, 'solo');
+    assert.equal(c10.success, true);
+    assert.ok(c10.unlockedCharacterId, 'Lv 10 reward must unlock a real RARE character');
+    assert.equal(characterUnlockManager.isUnlocked(c10.unlockedCharacterId!), true);
+    assert.equal(
+      playerProgressionManager.getProfile('solo').totalXP,
+      xpBeforeLv10Claim,
+      'Level reward character unlock must not double-grant +50 Character Unlock XP'
+    );
+
+    // Unlock ALL RARE characters manually, then claim Lv 30 (Rare Character) -> pays fallback Coins & Gems
+    for (const c of CHARACTER_REGISTRY) {
+      if (c.rarity === 'RARE') {
+        characterUnlockManager.unlockRewardCharacter(c.id, 'level_reward');
+      }
+    }
+    const coinsBeforeFallback = currencyManager.getSnapshot().coins;
+    const gemsBeforeFallback = currencyManager.getSnapshot().gems;
+    const c30 = claimLevelRewardWithGrant(30, 'solo');
+    assert.equal(c30.success, true);
+    assert.equal(c30.usedFallback, true);
+    assert.equal(
+      currencyManager.getSnapshot().coins,
+      coinsBeforeFallback + (LEVEL_REWARD_MAP.get(30)!.coins ?? 0) + (LEVEL_REWARD_MAP.get(30)!.fallbackCoins ?? 0)
+    );
+    assert.equal(
+      currencyManager.getSnapshot().gems,
+      gemsBeforeFallback + (LEVEL_REWARD_MAP.get(30)!.fallbackGems ?? 0)
+    );
+
+    // Claim Level 40 -> unlocks Exclusive Aurora Sky Theme & World Traveler title
+    const c40 = claimLevelRewardWithGrant(40, 'solo');
+    assert.equal(c40.success, true);
+    assert.equal(c40.unlockedWorldTheme, true);
+    assert.equal(playerProgressionManager.hasExclusiveWorldTheme('solo'), true);
+    assert.ok(playerProgressionManager.getProfile('solo').unlockedTitleIds.includes('world_traveler'));
+    assert.equal(LEVEL_REWARD_TRACK.length, 25);
+  });
+
+  // 36. Titles, Frames, XP History Filtering/Cap & Solo/P1/P2 Isolation + Canceled Tournament Safety
+  await runCase('Titles & Frames validate unlocks, XP History caps at 150 & filters accurately, and Solo/P1/P2 + Tournaments isolate XP correctly', () => {
+    storage.clear();
+    playerProgressionManager.reset(true);
+
+    // Locked title cannot be equipped; unlocked title equips cleanly
+    assert.equal(TITLE_REGISTRY.length, 15);
+    assert.equal(playerProgressionManager.equipTitle('ultimate_legend', 'solo'), false);
+    assert.equal(getTitleById(playerProgressionManager.getProfile('solo').equippedTitleId).id, 'newbie_flyer');
+
+    playerProgressionManager.unlockTitle('sky_legend', 'solo');
+    assert.equal(playerProgressionManager.equipTitle('sky_legend', 'solo'), true);
+    assert.equal(playerProgressionManager.getEquippedTitleName('solo'), 'Sky Legend');
+
+    // XP History cap at 150 + category filter
+    for (let i = 1; i <= 165; i++) {
+      playerProgressionManager.awardXP({
+        profileId: 'solo',
+        eventId: `hist_test_${i}`,
+        amount: 5,
+        label: `EVENT ${i}`,
+        category: i % 2 === 0 ? 'mission' : 'gameplay',
+      });
+    }
+    const allHist = playerProgressionManager.getXPHistory('solo', 'all');
+    const missionHist = playerProgressionManager.getXPHistory('solo', 'mission');
+    assert.equal(allHist.length, 150, 'XP history must be capped at 150 entries');
+    assert.ok(missionHist.every((h) => h.category === 'mission'));
+    assert.ok(missionHist.length > 0 && missionHist.length < 150);
+
+    // 2P & Tournament XP isolation (solo untouched, loser gets completion XP only, winner gets win + champion + title)
+    playerProgressionManager.reset(true);
+    const soloXPBefore2P = playerProgressionManager.getProfile('solo').totalXP;
+
+    // Canceled / incomplete tournament grants ZERO XP
+    playerProgressionManager.recordMultiplayerMatchXP({
+      matchId: 'aborted_match_1',
+      format: 'bo3',
+      status: 'round_1',
+      winner: null,
+      player1Name: 'ALEX',
+      player2Name: 'BRIAN',
+    });
+    assert.equal(playerProgressionManager.getProfile('player1').totalXP, 0);
+    assert.equal(playerProgressionManager.getProfile('player2').totalXP, 0);
+
+    // Completed BO5 where P2 wins
+    playerProgressionManager.recordMultiplayerMatchXP({
+      matchId: 'bo5_match_1',
+      format: 'bo5',
+      status: 'completed',
+      winner: 'player2',
+      player1Name: 'ALEX',
+      player2Name: 'BRIAN',
+    });
+    const p1 = playerProgressionManager.getProfile('player1');
+    const p2 = playerProgressionManager.getProfile('player2');
+    assert.equal(playerProgressionManager.getProfile('solo').totalXP, soloXPBefore2P);
+    assert.equal(p1.totalXP, 50, 'Tournament loser receives +50 completion XP only');
+    assert.equal(p2.totalXP, 300, 'BO5 winner receives +50 completion +100 win +150 champion = 300 XP');
+    assert.equal(p1.stats.tournamentWins, 0);
+    assert.equal(p2.stats.tournamentWins, 1);
+    assert.ok(p2.unlockedTitleIds.includes('tournament_champion'));
+  });
+
+  // 37. Cross-System Integration (Missions, Achievements, Characters, Skins, Worlds), Settings & Storage Corruption Recovery
+  await runCase('Missions, Achievements, Characters, Skins, Worlds emit XP cleanly; Progression Settings persist; Corruption recovers cleanly', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterUnlockManager.reset();
+    characterSkinManager.reset();
+    worldUnlockManager.reset();
+    missionManager.reset();
+    playerProgressionManager.reset(true);
+
+    // 1. Achievement unlock emits XP strictly once
+    const am = new AchievementManager();
+    am.checkScore(5); // unlocks first_flight (+25) & rookie (+25) = +50
+    const xpAfterAch = playerProgressionManager.getProfile('solo').stats.totalAchievementXP;
+    assert.equal(xpAfterAch, 50);
+    am.checkScore(5);
+    assert.equal(playerProgressionManager.getProfile('solo').stats.totalAchievementXP, 50);
+
+    // 2. Mission completion emits Mission XP once (claiming does NOT duplicate)
+    const mm = new MissionManager({ nowProvider: () => new Date(2026, 6, 1, 12, 0, 0, 0).getTime() });
+    mm.emitEvent({ type: 'coin_collected', amount: 100 }); // completes special_coin_hunter (250 XP)
+    const missionXP = playerProgressionManager.getProfile('solo').totalXP;
+    const achAndMissionXP = playerProgressionManager.getProfile('solo').stats.totalMissionXP;
+    assert.ok(achAndMissionXP >= 250, 'Mission completion must award mission XP immediately');
+    mm.claimReward('special_coin_hunter');
+    assert.equal(
+      playerProgressionManager.getProfile('solo').totalXP,
+      missionXP,
+      'Claiming a completed mission must not duplicate XP'
+    );
+
+    // 3. Character, Skin, and World gameplay unlocks emit Collection XP once
+    const cm = new CharacterUnlockManager();
+    cm.evaluateProgress({
+      bestScore: 10,
+      totalGamesPlayed: 5,
+      tournamentsWon: 0,
+      bestWinStreak: 0,
+      unlockedAchievements: 2,
+      totalAchievements: 12,
+    });
+    assert.ok(playerProgressionManager.getProfile('solo').stats.totalCollectionXP >= 50);
+
+    const smSkin = new CharacterSkinManager();
+    smSkin.evaluateUnlocks({
+      bestScore: 10,
+      totalGamesPlayed: 5,
+      collectionPercent: 25,
+    });
+    assert.ok(playerProgressionManager.getProfile('solo').stats.totalCollectionXP >= 75);
+
+    const wm = new WorldUnlockManager();
+    wm.evaluateProgress({
+      bestScore: 10,
+      totalGamesPlayed: 5,
+      tournamentsWon: 0,
+      bestWinStreak: 0,
+      unlockedAchievements: 2,
+      totalAchievements: 12,
+    });
+    assert.ok(playerProgressionManager.getProfile('solo').stats.totalCollectionXP >= 125);
+
+    // 4. Progression Settings toggles persist cleanly
+    const sm = new SettingsManager();
+    sm.update({
+      xpNotificationsEnabled: false,
+      levelUpAnimationEnabled: false,
+      progressionSoundsEnabled: false,
+    });
+    const reloaded = new SettingsManager().getSettings();
+    assert.equal(reloaded.xpNotificationsEnabled, false);
+    assert.equal(reloaded.levelUpAnimationEnabled, false);
+    assert.equal(reloaded.progressionSoundsEnabled, false);
+
+    // 5. LocalStorage persistence & corruption recovery
+    const savedTotal = playerProgressionManager.getProfile('solo').totalXP;
+    const reloadedPm = new PlayerProgressionManager();
+    assert.equal(reloadedPm.getProfile('solo').totalXP, savedTotal);
+
+    storage.set('flappy_face_player_progression', '{corrupt-json!!!');
+    const recoveredPm = new PlayerProgressionManager();
+    assert.equal(recoveredPm.getProfile('solo').currentLevel, 1);
+    assert.equal(recoveredPm.getProfile('solo').totalXP, 0);
   });
 
   console.log(`\nALL ${passed} TESTS PASSED.`);

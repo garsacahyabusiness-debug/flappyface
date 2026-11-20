@@ -2,6 +2,8 @@ import { characterRegistryHasRareOrHigher } from './missionContextHelpers';
 import { characterSkinManager, SkinId } from '../character/CharacterSkinManager';
 import { characterUnlockManager } from '../character/CharacterUnlockManager';
 import { currencyManager } from '../powerups/CurrencyManager';
+import { playerProgressionManager } from '../progression/PlayerProgressionManager';
+import { findTitleByNameOrId } from '../progression/TitleRegistry';
 import { settingsManager } from '../settings/SettingsManager';
 import { worldUnlockManager } from '../worlds/WorldUnlockManager';
 import {
@@ -59,6 +61,8 @@ const VALID_FRAMES = new Set<AvatarFrameId>([
   'perfect_wings',
   'cosmic_explorer',
   'streak_flame',
+  'elite_azure',
+  'ultimate_legend',
 ]);
 
 const ALL_DEFINITIONS_MAP: ReadonlyMap<string, MissionDefinition> = new Map([
@@ -585,6 +589,15 @@ export class MissionManager {
       };
       this.history = [entry, ...this.history].slice(0, MAX_HISTORY_ENTRIES);
     }
+
+    if (mission.reward.xp && mission.reward.xp > 0) {
+      playerProgressionManager.recordMissionCompletionXP(
+        mission.periodKey,
+        mission.id,
+        mission.title,
+        mission.reward.xp
+      );
+    }
   }
 
   private emitNotification(mission: MissionInstance): void {
@@ -664,6 +677,7 @@ export class MissionManager {
         this.cosmetics.equippedTitle = mission.reward.title;
       }
       granted.title = mission.reward.title;
+      playerProgressionManager.unlockTitle(mission.reward.title, 'solo');
     }
     if (
       mission.reward.avatarFrame &&
@@ -675,12 +689,14 @@ export class MissionManager {
         this.cosmetics.equippedFrame = mission.reward.avatarFrame;
       }
       granted.avatarFrame = mission.reward.avatarFrame;
+      playerProgressionManager.unlockFrame(mission.reward.avatarFrame, 'solo');
     }
 
     const totalMissionCoins = Math.max(0, Math.floor(mission.reward.coins + bonusCoins));
     const totalMissionGems = Math.max(0, Math.floor(mission.reward.gems + bonusGems));
 
     currencyManager.awardEventOnce(claimKey, totalMissionCoins, totalMissionGems);
+    playerProgressionManager.recordCurrencyRewardStats(totalMissionCoins, totalMissionGems, 'solo');
 
     this.stats.totalClaimed += 1;
     this.stats.totalCoinsEarned += totalMissionCoins;
@@ -759,6 +775,7 @@ export class MissionManager {
               ) {
                 this.cosmetics.frames.push(milestone.reward.avatarFrame);
                 granted.avatarFrame = milestone.reward.avatarFrame;
+                playerProgressionManager.unlockFrame(milestone.reward.avatarFrame, 'solo');
               }
               if (
                 milestone.reward.badge &&
@@ -773,9 +790,11 @@ export class MissionManager {
               ) {
                 this.cosmetics.titles.push(milestone.reward.title);
                 granted.title = milestone.reward.title;
+                playerProgressionManager.unlockTitle(milestone.reward.title, 'solo');
               }
 
               currencyManager.awardEventOnce(mKey, mCoins, mGems);
+              playerProgressionManager.recordCurrencyRewardStats(mCoins, mGems, 'solo');
               this.stats.totalCoinsEarned += mCoins;
               this.stats.totalGemsEarned += mGems;
               unlockedStreakMilestones.push(milestone);
@@ -806,6 +825,15 @@ export class MissionManager {
   public equipTitle(title: string | null): void {
     if (title !== null && !this.cosmetics.titles.includes(title)) return;
     this.cosmetics.equippedTitle = title;
+    if (title) {
+      playerProgressionManager.unlockTitle(title, 'solo');
+      const def = findTitleByNameOrId(title);
+      if (def) {
+        playerProgressionManager.equipTitle(def.id, 'solo');
+      }
+    } else {
+      playerProgressionManager.equipTitle('newbie_flyer', 'solo');
+    }
     this.save();
     this.notify();
   }
@@ -813,6 +841,22 @@ export class MissionManager {
   public equipFrame(frame: AvatarFrameId): void {
     if (!this.cosmetics.frames.includes(frame)) return;
     this.cosmetics.equippedFrame = frame;
+    playerProgressionManager.unlockFrame(frame, 'solo');
+    playerProgressionManager.equipFrame(frame, 'solo');
+    this.save();
+    this.notify();
+  }
+
+  public grantTitleExternal(title: string): void {
+    if (!title || this.cosmetics.titles.includes(title)) return;
+    this.cosmetics.titles.push(title);
+    this.save();
+    this.notify();
+  }
+
+  public grantFrameExternal(frame: AvatarFrameId): void {
+    if (!VALID_FRAMES.has(frame) || this.cosmetics.frames.includes(frame)) return;
+    this.cosmetics.frames.push(frame);
     this.save();
     this.notify();
   }

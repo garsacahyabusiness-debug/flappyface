@@ -12,6 +12,7 @@ export interface AudioVolumes {
   sfxEnabled: boolean;
   ambientEnabled?: boolean;
   missionSoundsEnabled?: boolean;
+  progressionSoundsEnabled?: boolean;
 }
 
 function clamp01(v: number): number {
@@ -37,6 +38,7 @@ export class AudioManager {
     sfxEnabled: true,
     ambientEnabled: true,
     missionSoundsEnabled: true,
+    progressionSoundsEnabled: true,
   };
 
   private unlocked = false;
@@ -152,6 +154,10 @@ export class AudioManager {
         typeof next.missionSoundsEnabled === 'boolean'
           ? next.missionSoundsEnabled
           : this.config.missionSoundsEnabled,
+      progressionSoundsEnabled:
+        typeof next.progressionSoundsEnabled === 'boolean'
+          ? next.progressionSoundsEnabled
+          : this.config.progressionSoundsEnabled,
     };
 
     this.applyGainValues(false);
@@ -414,6 +420,40 @@ export class AudioManager {
     this.unlock();
     const ready = this.canPlaySfx(true);
     if (ready) this.soundGen.playMissionClaim(ready.ctx, ready.out);
+  }
+
+  public playXPReceived(): void {
+    if (this.config.progressionSoundsEnabled === false) return;
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playXPReceived(ready.ctx, ready.out);
+  }
+
+  public playLevelUp(): void {
+    if (this.config.progressionSoundsEnabled === false) return;
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playLevelUp(ready.ctx, ready.out);
+  }
+
+  public playRewardUnlocked(): void {
+    if (this.config.progressionSoundsEnabled === false) return;
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playRewardUnlocked(ready.ctx, ready.out);
+  }
+
+  public playRankPromotion(): void {
+    if (this.config.progressionSoundsEnabled === false) return;
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playRankPromotion(ready.ctx, ready.out);
+  }
+
+  public playTitleUnlocked(): void {
+    if (this.config.progressionSoundsEnabled === false) return;
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playTitleUnlocked(ready.ctx, ready.out);
   }
 }
 
