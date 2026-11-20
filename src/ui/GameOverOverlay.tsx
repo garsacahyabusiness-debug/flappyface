@@ -1,13 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Home, RotateCcw, Share2, Trophy } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { getCharacterById } from '../game/character/CharacterRegistry';
+import { SkinId } from '../game/character/CharacterSkinManager';
 import { GameOverReaction } from '../game/GameOverReaction';
+import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 
 interface GameOverOverlayProps {
   score: number;
   bestScore: number;
   isNewBest: boolean;
   reaction?: GameOverReaction | null;
+  characterId?: string;
+  skinId?: SkinId;
+  customFaceImg?: HTMLImageElement | null;
+  runCoins?: number;
+  runGems?: number;
   onRetry: () => void;
   onHome: () => void;
 }
@@ -17,9 +25,15 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
   bestScore,
   isNewBest,
   reaction = null,
+  characterId = 'classic_bird',
+  skinId = 'default',
+  customFaceImg = null,
+  runCoins = 0,
+  runGems = 0,
   onRetry,
   onHome,
 }) => {
+  const activeChar = getCharacterById(characterId);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
@@ -87,14 +101,26 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
           </div>
         )}
 
-        {reaction && (
-          <p
-            key={reaction.id}
-            className="anim-reaction-in mx-auto mt-2.5 line-clamp-2 rounded-2xl bg-[#F2F9FF] px-3 py-2 text-[13px] leading-snug font-extrabold text-[#24415C]/90 sm:text-sm"
-          >
-            &ldquo;{reaction.text}&rdquo;
-          </p>
-        )}
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <div className="rounded-2xl border-2 border-[#24415C]/15 bg-[#EEF7FF] px-2 py-0.5">
+            <CharacterShowcaseCanvas
+              customFaceImg={customFaceImg}
+              characterId={characterId}
+              skinId={skinId}
+              rarity={customFaceImg ? undefined : activeChar.rarity}
+              size={54}
+              animate={false}
+            />
+          </div>
+          {reaction && (
+            <p
+              key={reaction.id}
+              className="anim-reaction-in line-clamp-3 flex-1 rounded-2xl bg-[#F2F9FF] px-3 py-2 text-left text-[12px] leading-snug font-extrabold text-[#24415C]/90"
+            >
+              &ldquo;{reaction.text}&rdquo;
+            </p>
+          )}
+        </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3 rounded-2xl border-2 border-[#24415C]/15 bg-[#E8F6FF] p-3 sm:mt-4 sm:p-3.5">
           <div className="flex flex-col items-center">
@@ -115,6 +141,22 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
             </span>
           </div>
         </div>
+
+        {(runCoins > 0 || runGems > 0) && (
+          <div className="mt-2.5 flex items-center justify-center gap-3 rounded-xl border-2 border-[#24415C]/15 bg-[#FFF9DB] px-3 py-1 text-xs font-black text-[#24415C]">
+            <span className="text-[10px] tracking-wider text-[#24415C]/65 uppercase">Earned</span>
+            {runCoins > 0 && (
+              <span className="inline-flex items-center gap-1 tabular-nums">
+                <span aria-hidden="true">🪙</span>+{runCoins}
+              </span>
+            )}
+            {runGems > 0 && (
+              <span className="inline-flex items-center gap-1 text-[#0284C7] tabular-nums">
+                <span aria-hidden="true">💎</span>+{runGems}
+              </span>
+            )}
+          </div>
+        )}
 
         {shareToast && (
           <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-700">

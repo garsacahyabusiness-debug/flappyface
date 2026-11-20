@@ -104,6 +104,30 @@ export class Score {
     return { scored, newBestTriggered };
   }
 
+  public addBonus(points: number, isGameOver = false): ScoreCheckResult {
+    const safePts = Math.max(0, Math.floor(points));
+    if (isGameOver || safePts <= 0) {
+      return { scored: false, newBestTriggered: false };
+    }
+
+    this.current += safePts;
+    this.popTimer = GAME_CONFIG.effects.scorePopDuration;
+    let newBestTriggered = false;
+
+    if (this.persistBest && this.current > this.best) {
+      this.best = this.current;
+      this.isNewBest = true;
+      this.saveBestScore(this.best);
+
+      if (!this.hasTriggeredNewBestThisRun && this.current > this.bestAtRunStart) {
+        this.hasTriggeredNewBestThisRun = true;
+        newBestTriggered = true;
+      }
+    }
+
+    return { scored: true, newBestTriggered };
+  }
+
   public update(dt: number): void {
     if (this.popTimer > 0) {
       this.popTimer = Math.max(0, this.popTimer - dt);

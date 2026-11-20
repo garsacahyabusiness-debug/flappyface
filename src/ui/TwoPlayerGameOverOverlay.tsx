@@ -1,8 +1,11 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { getCharacterById } from '../game/character/CharacterRegistry';
+import { SkinId } from '../game/character/CharacterSkinManager';
 import { GameOverReaction } from '../game/GameOverReaction';
 import { PlayerSlot } from '../game/TwoPlayerMatch';
+import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 
 interface TwoPlayerGameOverOverlayProps {
   playerSlot: PlayerSlot;
@@ -11,6 +14,9 @@ interface TwoPlayerGameOverOverlayProps {
   maxRounds: number;
   score: number;
   reaction: GameOverReaction | null;
+  characterId?: string;
+  skinId?: SkinId;
+  customFaceImg?: HTMLImageElement | null;
   onContinue: () => void;
 }
 
@@ -21,8 +27,12 @@ export const TwoPlayerGameOverOverlay: React.FC<TwoPlayerGameOverOverlayProps> =
   maxRounds,
   score,
   reaction,
+  characterId = 'classic_bird',
+  skinId = 'default',
+  customFaceImg = null,
   onContinue,
 }) => {
+  const activeChar = getCharacterById(characterId);
   const isP1 = playerSlot === 1;
   const badgeText =
     maxRounds > 1
@@ -51,14 +61,26 @@ export const TwoPlayerGameOverOverlay: React.FC<TwoPlayerGameOverOverlayProps> =
           {playerName}
         </div>
 
-        {reaction && (
-          <p
-            key={reaction.id}
-            className="anim-reaction-in mx-auto mt-2.5 line-clamp-2 rounded-2xl bg-[#F2F9FF] px-3 py-2 text-[13px] leading-snug font-extrabold text-[#24415C]/90 sm:text-sm"
-          >
-            &ldquo;{reaction.text}&rdquo;
-          </p>
-        )}
+        <div className="mt-2 flex items-center justify-center gap-2">
+          <div className="rounded-2xl border-2 border-[#24415C]/15 bg-[#EEF7FF] px-2 py-0.5">
+            <CharacterShowcaseCanvas
+              customFaceImg={customFaceImg}
+              characterId={characterId}
+              skinId={skinId}
+              rarity={customFaceImg ? undefined : activeChar.rarity}
+              size={52}
+              animate={false}
+            />
+          </div>
+          {reaction && (
+            <p
+              key={reaction.id}
+              className="anim-reaction-in line-clamp-3 flex-1 rounded-2xl bg-[#F2F9FF] px-3 py-2 text-left text-[12px] leading-snug font-extrabold text-[#24415C]/90"
+            >
+              &ldquo;{reaction.text}&rdquo;
+            </p>
+          )}
+        </div>
 
         <div className="mt-3 rounded-2xl border-2 border-[#24415C]/15 bg-[#E8F6FF] p-3.5">
           <div className="text-[11px] font-black tracking-wider text-[#24415C]/65 uppercase">

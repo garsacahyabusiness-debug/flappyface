@@ -19,6 +19,8 @@ import {
 import { audioManager } from '../game/audio/AudioManager';
 import { CameraController } from '../game/character/CameraController';
 import { CharacterManager, characterManager } from '../game/character/CharacterManager';
+import { SkinId } from '../game/character/CharacterSkinManager';
+import { characterUnlockManager } from '../game/character/CharacterUnlockManager';
 import { GalleryController } from '../game/character/GalleryController';
 import { ImageProcessor } from '../game/character/ImageProcessor';
 import { PhotoEditor } from '../game/character/PhotoEditor';
@@ -29,6 +31,7 @@ interface CharacterCustomizationProps {
   customFaceImg: HTMLImageElement | null;
   targetManager?: CharacterManager;
   slotBadge?: { label: string; tone: 'blue' | 'rose' } | null;
+  activeSkinId?: SkinId;
   onBack: () => void;
 }
 
@@ -38,6 +41,7 @@ export const CharacterCustomization: React.FC<CharacterCustomizationProps> = ({
   customFaceImg,
   targetManager = characterManager,
   slotBadge = null,
+  activeSkinId = 'default',
   onBack,
 }) => {
   const [step, setStep] = useState<ScreenStep>('MENU');
@@ -235,6 +239,7 @@ export const CharacterCustomization: React.FC<CharacterCustomizationProps> = ({
       setErrorMsg(null);
       const processedDataUrl = editor.exportProcessedDataUrl();
       await targetManager.setCustomFaceFromDataUrl(processedDataUrl, sourceType);
+      characterUnlockManager.selectCustomFaceMode(targetManager.getSlot());
       editorRef.current = null;
       setStep('MENU');
       showSuccess('Custom face saved! Ready to fly!', 2800);
@@ -248,9 +253,14 @@ export const CharacterCustomization: React.FC<CharacterCustomizationProps> = ({
   const handleConfirmRemove = async () => {
     try {
       setIsProcessing(true);
+      const slot = targetManager.getSlot();
+      const sel = characterUnlockManager.getSelection(slot);
       await targetManager.removePhoto();
+      if (sel.mode === 'custom_face') {
+        characterUnlockManager.selectGameCharacter(sel.characterId, slot);
+      }
       setShowRemoveConfirm(false);
-      showSuccess('Kembali ke karakter burung default.', 2500);
+      showSuccess('Foto dihapus. Kembali ke karakter game.', 2500);
     } finally {
       setIsProcessing(false);
     }
@@ -260,8 +270,8 @@ export const CharacterCustomization: React.FC<CharacterCustomizationProps> = ({
     if (!customFaceImg) return;
     try {
       setIsProcessing(true);
-      await targetManager.resetCharacter();
-      showSuccess('Menggunakan karakter burung default.', 2500);
+      characterUnlockManager.selectGameCharacter('classic_bird', targetManager.getSlot());
+      showSuccess('Memakai Classic Bird. Foto Custom Face tetap tersimpan!', 2600);
     } finally {
       setIsProcessing(false);
     }
@@ -372,11 +382,15 @@ export const CharacterCustomization: React.FC<CharacterCustomizationProps> = ({
               )}
 
               <div className="mt-2 flex flex-col items-center rounded-3xl bg-[#E8F6FF] px-6 py-1">
-                <CharacterShowcaseCanvas customFaceImg={customFaceImg} size={136} />
+                <CharacterShowcaseCanvas
+                  customFaceImg={customFaceImg}
+                  skinId={activeSkinId}
+                  size={136}
+                />
               </div>
 
               <div className="mt-2 text-xs font-extrabold text-[#3998F7]">
-                {customFaceImg ? 'Custom Face Active' : 'Default Cartoon Bird'}
+                {customFaceImg ? 'Custom Face Saved' : 'Default Cartoon Bird'}
               </div>
 
               {/* Action Buttons */}

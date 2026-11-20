@@ -1,5 +1,8 @@
+import { getCharacterById } from './character/CharacterRegistry';
 import { CharacterRenderer } from './character/CharacterRenderer';
+import { getSkinById, SkinId } from './character/CharacterSkinManager';
 import { GAME_CONFIG } from './Config';
+import { ParticleKind } from './ParticleSystem';
 
 export class Player {
   public x: number;
@@ -14,7 +17,10 @@ export class Player {
 
   private blinkTimer: number;
   private isBlinking: boolean;
+  private animTime = 0;
   private customFaceImage: HTMLImageElement | null = null;
+  private characterId = 'classic_bird';
+  private skinId: SkinId = 'default';
 
   constructor() {
     this.visualRadius = GAME_CONFIG.player.visualRadius;
@@ -32,6 +38,20 @@ export class Player {
 
   public setCustomFaceImage(image: HTMLImageElement | null): void {
     this.customFaceImage = image;
+  }
+
+  public setCharacterVisual(characterId: string, skinId: SkinId = 'default'): void {
+    this.characterId = characterId;
+    this.skinId = skinId;
+  }
+
+  public getTrailStyle(): { colors: readonly string[]; kind: ParticleKind } {
+    const skin = getSkinById(this.skinId);
+    const charDef = getCharacterById(this.characterId);
+    const colors = skin.trailColors ?? charDef.visual.trailColors;
+    const kind: ParticleKind =
+      skin.particleKind !== 'default' ? skin.particleKind : 'feather';
+    return { colors, kind };
   }
 
   public reset(): void {
@@ -53,6 +73,7 @@ export class Player {
 
   public updateIdle(elapsedSec: number, dt: number): void {
     const { startY, idleAmplitude, idleFrequency } = GAME_CONFIG.player;
+    this.animTime += dt;
     this.y = startY + Math.sin(elapsedSec * idleFrequency) * idleAmplitude;
     this.rotation = Math.sin(elapsedSec * 2.1) * 0.06;
     this.wingPhase += dt * 9.5;
@@ -61,6 +82,7 @@ export class Player {
   }
 
   public updateFlyingAnimation(dt: number): void {
+    this.animTime += dt;
     const wingSpeed = this.vy < 110 ? 18 : 7.5;
     this.wingPhase += dt * wingSpeed;
     this.flapPulse = Math.max(0, this.flapPulse - dt * 5.2);
@@ -100,6 +122,27 @@ export class Player {
       isDead: this.isDead,
       isBlinking: this.isBlinking,
       customFaceImage: this.customFaceImage,
+      characterId: this.characterId,
+      skinId: this.skinId,
+      animTime: this.animTime,
+    });
+  }
+
+  public drawLocked(ctx: CanvasRenderingContext2D): void {
+    CharacterRenderer.draw(ctx, {
+      x: this.x,
+      y: this.y,
+      visualRadius: this.visualRadius,
+      rotation: this.rotation,
+      wingPhase: this.wingPhase,
+      flapPulse: 0,
+      isDead: false,
+      isBlinking: false,
+      customFaceImage: null,
+      characterId: this.characterId,
+      skinId: 'default',
+      animTime: this.animTime,
+      lockedSilhouette: true,
     });
   }
 }

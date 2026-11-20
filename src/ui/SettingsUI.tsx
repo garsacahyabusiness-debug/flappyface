@@ -3,23 +3,41 @@ import {
   ArrowLeft,
   Camera,
   Check,
+  CloudRain,
+  Compass,
   Gauge,
   Info,
+  Layers,
+  Lock,
   Music,
   RotateCcw,
   ShieldCheck,
   Smartphone,
+  Sparkles,
+  SunMoon,
   Volume2,
   VolumeX,
+  Wind,
+  Zap,
 } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { characterUnlockManager } from '../game/character/CharacterUnlockManager';
+import { VisualEffectsQuality } from '../game/powerups/PowerUpManager';
+import { PowerUpFrequencySetting } from '../game/powerups/PowerUpSpawnManager';
 import { GameSettings, settingsManager } from '../game/settings/SettingsManager';
 import { vibrationManager } from '../game/settings/VibrationManager';
+import { GraphicsPreset } from '../game/worlds/EnvironmentRenderer';
+import { ParticleLevel } from '../game/worlds/WeatherSystem';
+import { getWorldById } from '../game/worlds/WorldRegistry';
+import { worldUnlockManager } from '../game/worlds/WorldUnlockManager';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface SettingsUIProps {
   settings: GameSettings;
   onChangeFace: () => void;
+  onOpenWorldSelect: () => void;
+  onEnvironmentChange?: () => void;
+  onSkyThemeChange?: () => void;
   onResetProgression: () => void;
   onResetAllData: () => Promise<void>;
   onOpenPrivacy: () => void;
@@ -62,6 +80,9 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
 export const SettingsUI: React.FC<SettingsUIProps> = ({
   settings,
   onChangeFace,
+  onOpenWorldSelect,
+  onEnvironmentChange,
+  onSkyThemeChange,
   onResetProgression,
   onResetAllData,
   onOpenPrivacy,
@@ -75,6 +96,8 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
   const toastTimerRef = useRef<number | null>(null);
   const vibrationSupported = vibrationManager.isSupported();
   const audioSupported = audioManager.isAudioSupported();
+  const collectionSummary = characterUnlockManager.getCollectionSummary();
+  const activeWorld = getWorldById(worldUnlockManager.getSelectedWorldId());
 
   useEffect(() => {
     return () => {
@@ -125,9 +148,53 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
 
   const handleTogglePerformance = () => {
     audioManager.playButton();
+    const nextMode = settings.performanceMode === 'high' ? 'eco' : 'high';
     settingsManager.update({
-      performanceMode: settings.performanceMode === 'high' ? 'eco' : 'high',
+      performanceMode: nextMode,
+      graphicsPreset: nextMode === 'eco' ? 'low' : 'high',
     });
+    onEnvironmentChange?.();
+  };
+
+  const handleToggleSkyTheme = () => {
+    if (!collectionSummary.hasSpecialBackground) return;
+    audioManager.playButton();
+    settingsManager.update({
+      skyTheme: settings.skyTheme === 'special' ? 'classic' : 'special',
+    });
+    onSkyThemeChange?.();
+  };
+
+  const cycleParticles = () => {
+    audioManager.playButton();
+    const order: ParticleLevel[] = ['low', 'medium', 'high'];
+    const next = order[(order.indexOf(settings.particleLevel) + 1) % order.length];
+    settingsManager.update({ particleLevel: next });
+    onEnvironmentChange?.();
+  };
+
+  const cycleGraphics = () => {
+    audioManager.playButton();
+    const order: GraphicsPreset[] = ['low', 'medium', 'high'];
+    const next = order[(order.indexOf(settings.graphicsPreset) + 1) % order.length];
+    settingsManager.update({ graphicsPreset: next });
+    onEnvironmentChange?.();
+  };
+
+  const cyclePowerUpFrequency = () => {
+    audioManager.playButton();
+    const order: PowerUpFrequencySetting[] = ['low', 'normal', 'high'];
+    const next = order[(order.indexOf(settings.powerUpFrequency) + 1) % order.length];
+    settingsManager.update({ powerUpFrequency: next });
+    onEnvironmentChange?.();
+  };
+
+  const cycleVisualFxQuality = () => {
+    audioManager.playButton();
+    const order: VisualEffectsQuality[] = ['low', 'medium', 'high'];
+    const next = order[(order.indexOf(settings.visualEffectsQuality) + 1) % order.length];
+    settingsManager.update({ visualEffectsQuality: next });
+    onEnvironmentChange?.();
   };
 
   return (
@@ -294,7 +361,7 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                 <div className="flex items-center gap-2.5">
                   <Smartphone className="h-4 w-4 text-[#3998F7]" />
                   <div>
-                    <div className="text-sm font-extrabold text-[#24415C]">VIBRATION</div>
+                    <div className="text-sm font-extrabold text-[#24415C]">HAPTIC FEEDBACK</div>
                     {!vibrationSupported && (
                       <div className="text-[10px] font-bold text-[#24415C]/55">
                         Not supported on this device
@@ -328,6 +395,262 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                   className="min-h-[34px] rounded-xl border-2 border-[#24415C] bg-white px-3 text-xs font-black text-[#24415C]"
                 >
                   {settings.performanceMode === 'high' ? 'HIGH' : 'ECO'}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#F59E0B]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">AURORA SKY</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      {collectionSummary.hasSpecialBackground
+                        ? settings.skyTheme === 'special'
+                          ? 'Special Sunset Sky Active'
+                          : 'Classic Blue Sky Active'
+                        : `Unlock at 50% Collection (${collectionSummary.percent}%)`}
+                    </div>
+                  </div>
+                </div>
+                {collectionSummary.hasSpecialBackground ? (
+                  <ToggleSwitch
+                    checked={settings.skyTheme === 'special'}
+                    label="Toggle Special Aurora Sky"
+                    onToggle={handleToggleSkyTheme}
+                  />
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-xl border border-slate-300 bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">
+                    <Lock className="h-3 w-3" />
+                    <span>50%</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* ENVIRONMENT SECTION */}
+          <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
+            <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">
+              ENVIRONMENT
+            </h3>
+
+            <div className="mt-2.5 space-y-3">
+              {/* Active World Shortcut */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <Compass className="h-4 w-4 text-[#3998F7]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">WORLD</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/65">
+                      {activeWorld.name}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    audioManager.playButton();
+                    onOpenWorldSelect();
+                  }}
+                  className="min-h-[34px] rounded-xl border-2 border-[#24415C] bg-[#FFD84D] px-3 text-xs font-black text-[#24415C]"
+                >
+                  CHANGE
+                </button>
+              </div>
+
+              {/* Weather Effects Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <CloudRain className="h-4 w-4 text-[#3998F7]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">WEATHER</span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.weatherEnabled}
+                  label="Toggle Weather Effects"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ weatherEnabled: !settings.weatherEnabled });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              {/* Dynamic Day/Night Sky Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <SunMoon className="h-4 w-4 text-[#F59E0B]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">DYNAMIC SKY</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Morning · Day · Sunset · Night
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.dynamicSkyEnabled}
+                  label="Toggle Dynamic Sky"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ dynamicSkyEnabled: !settings.dynamicSkyEnabled });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              {/* Parallax Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Layers className="h-4 w-4 text-[#32B85C]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">PARALLAX</span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.parallaxEnabled}
+                  label="Toggle Parallax Depth"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ parallaxEnabled: !settings.parallaxEnabled });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              {/* Ambient Sound Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Wind className="h-4 w-4 text-[#3998F7]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">AMBIENT SOUND</span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.ambientSoundEnabled}
+                  disabled={!audioSupported}
+                  label="Toggle Ambient Sound"
+                  onToggle={() => {
+                    audioManager.unlock();
+                    audioManager.playButton();
+                    settingsManager.update({
+                      ambientSoundEnabled: !settings.ambientSoundEnabled,
+                    });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              {/* Particle Level */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#9333EA]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">PARTICLES</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={cycleParticles}
+                  className="min-h-[34px] rounded-xl border-2 border-[#24415C] bg-white px-3 text-xs font-black text-[#24415C] uppercase"
+                >
+                  {settings.particleLevel}
+                </button>
+              </div>
+
+              {/* Graphics Preset */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Gauge className="h-4 w-4 text-[#3998F7]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">GRAPHICS</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={cycleGraphics}
+                  className="min-h-[34px] rounded-xl border-2 border-[#24415C] bg-white px-3 text-xs font-black text-[#24415C] uppercase"
+                >
+                  {settings.graphicsPreset}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          {/* POWER-UPS & EFFECTS SECTION */}
+          <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
+            <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">
+              POWER-UPS &amp; EFFECTS
+            </h3>
+
+            <div className="mt-2.5 space-y-3">
+              {/* Power-Ups Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Zap className="h-4 w-4 text-[#F59E0B]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">POWER-UPS</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Shield · Revive · Slow-Mo · Magnet · Boost · Feather
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.powerUpsEnabled}
+                  label="Toggle Power-Ups"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ powerUpsEnabled: !settings.powerUpsEnabled });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              {/* Collectibles Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#38BDF8]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">COLLECTIBLES</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Coins · Stars · Gems
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.collectiblesEnabled}
+                  label="Toggle Collectibles"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ collectiblesEnabled: !settings.collectiblesEnabled });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              {/* Power-Up Frequency */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Gauge className="h-4 w-4 text-[#9333EA]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">POWER-UP FREQUENCY</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Tournament matches always use NORMAL
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={!settings.powerUpsEnabled}
+                  onClick={cyclePowerUpFrequency}
+                  className="min-h-[34px] rounded-xl border-2 border-[#24415C] bg-white px-3 text-xs font-black text-[#24415C] uppercase disabled:opacity-45"
+                >
+                  {settings.powerUpFrequency}
+                </button>
+              </div>
+
+              {/* Visual Effects Quality */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#32B85C]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">VISUAL EFFECTS</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={cycleVisualFxQuality}
+                  className="min-h-[34px] rounded-xl border-2 border-[#24415C] bg-white px-3 text-xs font-black text-[#24415C] uppercase"
+                >
+                  {settings.visualEffectsQuality}
                 </button>
               </div>
             </div>
@@ -507,7 +830,7 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
               Reset All Data?
             </h3>
             <p className="mt-2 text-xs font-bold leading-relaxed text-[#24415C]/80">
-              This will delete your high score, achievements, stats, 2P leaderboard, match history, settings, AND all saved custom face photos.
+              This will delete your high score, achievements, stats, character collection, skins, 2P leaderboard, match history, settings, AND all saved custom face photos.
             </p>
             <div className="mt-5 grid grid-cols-2 gap-2.5">
               <button

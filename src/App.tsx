@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pause, Trophy } from 'lucide-react';
 import { audioManager } from './game/audio/AudioManager';
+import { characterFavorites } from './game/character/CharacterFavorites';
 import {
   characterManager,
   player1CharacterManager,
   player2CharacterManager,
 } from './game/character/CharacterManager';
+import { characterRandomizer } from './game/character/CharacterRandomizer';
+import { CharacterDefinition } from './game/character/CharacterRegistry';
+import { characterSkinManager, SkinId } from './game/character/CharacterSkinManager';
+import { CharacterSlot } from './game/character/CharacterStorage';
+import { CharacterMetrics, characterUnlockManager } from './game/character/CharacterUnlockManager';
 import { Game, GameUIState } from './game/Game';
+import { currencyManager, CurrencySnapshot } from './game/powerups/CurrencyManager';
 import { achievementManager, AchievementRecord } from './game/progression/AchievementManager';
 import {
   leaderboardManager,
@@ -26,7 +33,11 @@ import {
 import { AboutPanel } from './ui/AboutPanel';
 import { AchievementCollectionUI } from './ui/AchievementCollectionUI';
 import { AchievementPopup } from './ui/AchievementPopup';
+import { CharacterCollectionScreen } from './ui/CharacterCollectionScreen';
 import { CharacterCustomization } from './ui/CharacterCustomization';
+import { CharacterProfileScreen } from './ui/CharacterProfileScreen';
+import { CharacterSelectScreen } from './ui/CharacterSelectScreen';
+import { CharacterUnlockPopup } from './ui/CharacterUnlockPopup';
 import { CountdownOverlay } from './ui/CountdownOverlay';
 import { GameOverOverlay } from './ui/GameOverOverlay';
 import { LeaderboardUI } from './ui/LeaderboardUI';
@@ -34,8 +45,11 @@ import { MainMenu } from './ui/MainMenu';
 import { MatchResultOverlay } from './ui/MatchResultOverlay';
 import { OfflineIndicator } from './ui/OfflineIndicator';
 import { PauseOverlay } from './ui/PauseOverlay';
+import { PowerUpHUD } from './ui/PowerUpHUD';
+import { PowerUpNotification } from './ui/PowerUpNotification';
 import { PrivacyModal } from './ui/PrivacyModal';
 import { PWAUpdateBanner } from './ui/PWAUpdateBanner';
+import { ReviveDialog } from './ui/ReviveDialog';
 import { RoundResultOverlay } from './ui/RoundResultOverlay';
 import { SettingsUI } from './ui/SettingsUI';
 import { SplashScreen } from './ui/SplashScreen';
@@ -43,6 +57,11 @@ import { StatsUI } from './ui/StatsUI';
 import { TurnTransitionOverlay } from './ui/TurnTransitionOverlay';
 import { TwoPlayerGameOverOverlay } from './ui/TwoPlayerGameOverOverlay';
 import { TwoPlayerSetup } from './ui/TwoPlayerSetup';
+import { WorldCollectionScreen } from './ui/WorldCollectionScreen';
+import { WorldSelectScreen } from './ui/WorldSelectScreen';
+import { WorldUnlockPopup } from './ui/WorldUnlockPopup';
+import { WorldDefinition, WorldId } from './game/worlds/WorldRegistry';
+import { worldUnlockManager } from './game/worlds/WorldUnlockManager';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -56,9 +75,16 @@ export default function App() {
   const [player2FaceImg, setPlayer2FaceImg] = useState<HTMLImageElement | null>(() =>
     player2CharacterManager.getImage()
   );
-  const [charEditorTarget, setCharEditorTarget] = useState<'default' | 'player1' | 'player2'>(
-    'default'
-  );
+  const [charEditorTarget, setCharEditorTarget] = useState<CharacterSlot>('default');
+  const [selectReturnState, setSelectReturnState] = useState<
+    'MAIN_MENU' | 'TWO_PLAYER_SETUP' | 'CHARACTER_COLLECTION'
+  >('MAIN_MENU');
+  const [selectFocusCharId, setSelectFocusCharId] = useState<string | null>(null);
+  const [profileTarget, setProfileTarget] = useState<{
+    character: CharacterDefinition;
+    slot: CharacterSlot;
+  } | null>(null);
+  const [, setCollectionVersion] = useState(0);
   const [twoPlayerDraftNames, setTwoPlayerDraftNames] = useState(() => loadStoredPlayerNames());
   const [settings, setSettings] = useState<GameSettings>(() => settingsManager.getSettings());
   const [achievements, setAchievements] = useState<AchievementRecord[]>(() =>
@@ -71,20 +97,44 @@ export default function App() {
   const [matchHistory, setMatchHistory] = useState<MatchHistoryEntry[]>(() =>
     leaderboardManager.getMatchHistory()
   );
+  const [currency, setCurrency] = useState<CurrencySnapshot>(() => currencyManager.getSnapshot());
   const [achievementQueue, setAchievementQueue] = useState<AchievementRecord[]>([]);
+  const [characterUnlockQueue, setCharacterUnlockQueue] = useState<CharacterDefinition[]>([]);
+  const [worldUnlockQueue, setWorldUnlockQueue] = useState<WorldDefinition[]>([]);
+  const [worldReturnState, setWorldReturnState] = useState<
+    'MAIN_MENU' | 'TWO_PLAYER_SETUP' | 'SETTINGS'
+  >('MAIN_MENU');
+  const [worldFocusId, setWorldFocusId] = useState<WorldId | null>(null);
   const [showNewBestBanner, setShowNewBestBanner] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const showPrivacyModalRef = useRef(false);
-  const charEditorTargetRef = useRef<'default' | 'player1' | 'player2'>('default');
+  const profileOpenRef = useRef(false);
+  const charEditorTargetRef = useRef<CharacterSlot>('default');
+  const selectReturnStateRef = useRef<'MAIN_MENU' | 'TWO_PLAYER_SETUP' | 'CHARACTER_COLLECTION'>(
+    'MAIN_MENU'
+  );
+  const worldReturnStateRef = useRef<'MAIN_MENU' | 'TWO_PLAYER_SETUP' | 'SETTINGS'>('MAIN_MENU');
 
   useEffect(() => {
     showPrivacyModalRef.current = showPrivacyModal;
   }, [showPrivacyModal]);
 
   useEffect(() => {
+    profileOpenRef.current = profileTarget !== null;
+  }, [profileTarget]);
+
+  useEffect(() => {
     charEditorTargetRef.current = charEditorTarget;
   }, [charEditorTarget]);
+
+  useEffect(() => {
+    selectReturnStateRef.current = selectReturnState;
+  }, [selectReturnState]);
+
+  useEffect(() => {
+    worldReturnStateRef.current = worldReturnState;
+  }, [worldReturnState]);
 
   const [uiState, setUiState] = useState<GameUIState>({
     state: 'MAIN_MENU',
@@ -100,6 +150,15 @@ export default function App() {
     activePlayerSlot: null,
     twoPlayerMatch: null,
     isTwoPlayerPaused: false,
+    activeCharacterId: 'classic_bird',
+    activeSkinId: 'default',
+    activeWorldId: 'green_valley',
+    activeWeather: 'sunny',
+    activePowerUps: [],
+    reviveRemainingSec: 0,
+    latestPowerUpBanner: null,
+    runCoinsCollected: 0,
+    runGemsCollected: 0,
   });
 
   const consumeCurrentAchievement = useCallback(() => {
@@ -129,6 +188,7 @@ export default function App() {
     const unsubSettings = settingsManager.subscribe((next) => {
       setSettings(next);
       gameRef.current?.setPerformanceMode(next.performanceMode);
+      gameRef.current?.syncEnvironmentSettings();
     });
     const unsubAchievements = achievementManager.subscribe((list) => {
       setAchievements(list);
@@ -140,11 +200,27 @@ export default function App() {
       setLeaderboardPlayers(leaderboardManager.getTopPlayers());
       setMatchHistory(leaderboardManager.getMatchHistory());
     });
+    const bumpCollection = () => {
+      setCollectionVersion((v) => v + 1);
+      gameRef.current?.syncExternalVisuals();
+    };
+    const unsubUnlocks = characterUnlockManager.subscribe(bumpCollection);
+    const unsubWorlds = worldUnlockManager.subscribe(bumpCollection);
+    const unsubSkins = characterSkinManager.subscribe(bumpCollection);
+    const unsubFavs = characterFavorites.subscribe(() => setCollectionVersion((v) => v + 1));
+    const unsubRand = characterRandomizer.subscribe(() => setCollectionVersion((v) => v + 1));
+    const unsubCurrency = currencyManager.subscribe((snap) => setCurrency(snap));
     return () => {
       unsubSettings();
       unsubAchievements();
       unsubStats();
       unsubLeaderboard();
+      unsubUnlocks();
+      unsubWorlds();
+      unsubSkins();
+      unsubFavs();
+      unsubRand();
+      unsubCurrency();
     };
   }, []);
 
@@ -234,6 +310,12 @@ export default function App() {
       },
       (newlyUnlocked) => {
         setAchievementQueue((prev) => [...prev, ...newlyUnlocked]);
+      },
+      (newlyUnlockedChars) => {
+        setCharacterUnlockQueue((prev) => [...prev, ...newlyUnlockedChars]);
+      },
+      (newlyUnlockedWorlds) => {
+        setWorldUnlockQueue((prev) => [...prev, ...newlyUnlockedWorlds]);
       }
     );
     game.setPerformanceMode(settingsManager.getSettings().performanceMode);
@@ -301,6 +383,10 @@ export default function App() {
     };
 
     const handleBackAction = () => {
+      if (profileOpenRef.current) {
+        setProfileTarget(null);
+        return;
+      }
       if (showPrivacyModalRef.current) {
         setShowPrivacyModal(false);
         return;
@@ -313,6 +399,9 @@ export default function App() {
       ) {
         audioManager.playButton();
         game.pause();
+      } else if (currentState === 'REVIVE_PROMPT') {
+        audioManager.playButton();
+        game.declineRevive();
       } else if (currentState === 'PAUSED') {
         audioManager.playButton();
         game.resume();
@@ -321,7 +410,17 @@ export default function App() {
         game.setMenuState(
           charEditorTargetRef.current === 'default' ? 'MAIN_MENU' : 'TWO_PLAYER_SETUP'
         );
+      } else if (currentState === 'CHARACTER_SELECT') {
+        audioManager.playButton();
+        game.setMenuState(selectReturnStateRef.current);
+      } else if (currentState === 'WORLD_COLLECTION') {
+        audioManager.playButton();
+        game.setMenuState('WORLD_SELECT');
+      } else if (currentState === 'WORLD_SELECT') {
+        audioManager.playButton();
+        game.setMenuState(worldReturnStateRef.current);
       } else if (
+        currentState === 'CHARACTER_COLLECTION' ||
         currentState === 'TWO_PLAYER_SETUP' ||
         currentState === 'LEADERBOARD' ||
         currentState === 'ACHIEVEMENTS' ||
@@ -404,6 +503,7 @@ export default function App() {
     uiState.state === 'PLAYER_2_PLAYING';
   const isFlightOrCountdown =
     isGameplayPausedCapable ||
+    uiState.state === 'REVIVE_PROMPT' ||
     uiState.state === 'READY' ||
     uiState.state === 'PLAYER_1_READY' ||
     uiState.state === 'PLAYER_2_READY';
@@ -426,6 +526,25 @@ export default function App() {
       : charEditorTarget === 'player2'
         ? ({ label: 'PLAYER 2', tone: 'rose' } as const)
         : null;
+
+  const defaultSelection = characterUnlockManager.getSelection('default');
+  const p1Selection = characterUnlockManager.getSelection('player1');
+  const p2Selection = characterUnlockManager.getSelection('player2');
+  const defaultSkinId = characterSkinManager.getSelectedSkin('default');
+  const p1SkinId = characterSkinManager.getSelectedSkin('player1');
+  const p2SkinId = characterSkinManager.getSelectedSkin('player2');
+  const collectionSummary = characterUnlockManager.getCollectionSummary();
+  const worldSummary = worldUnlockManager.getCollectionSummary();
+  const activeWorldId = worldUnlockManager.getSelectedWorldId();
+  const unlockMetrics: CharacterMetrics = {
+    bestScore: Math.max(uiState.bestScore, stats.bestScore),
+    totalGamesPlayed: stats.totalGamesPlayed,
+    tournamentsWon: leaderboardPlayers.reduce((sum, p) => sum + p.wins, 0),
+    bestWinStreak: leaderboardPlayers.reduce((max, p) => Math.max(max, p.bestWinStreak), 0),
+    unlockedAchievements: unlockedCount,
+    totalAchievements: achievements.length,
+  };
+  const activeEditorSkinId = characterSkinManager.getSelectedSkin(charEditorTarget);
 
   return (
     <main className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-gradient-to-b from-[#49B4FF] via-[#69C9FF] to-[#9BE4FF]">
@@ -511,6 +630,22 @@ export default function App() {
             </div>
           )}
 
+        {/* POWER-UP & COLLECTIBLE GAMEPLAY HUD */}
+        {isGameplayPausedCapable && (
+          <PowerUpHUD
+            activePowerUps={uiState.activePowerUps}
+            runCoins={uiState.runCoinsCollected}
+            runGems={uiState.runGemsCollected}
+            collectiblesEnabled={settings.collectiblesEnabled}
+          />
+        )}
+
+        {/* BRIEF NON-BLOCKING POWER-UP ACTIVATION BANNER */}
+        <PowerUpNotification
+          banner={uiState.latestPowerUpBanner}
+          visible={isGameplayPausedCapable}
+        />
+
         {/* MAIN MENU */}
         {uiState.state === 'MAIN_MENU' && (
           <div className="absolute inset-0 z-20">
@@ -519,6 +654,20 @@ export default function App() {
               unlockedCount={unlockedCount}
               totalAchievements={achievements.length}
               customFaceImg={customFaceImg}
+              activeCharacterId={defaultSelection.characterId}
+              activeSkinId={defaultSkinId}
+              isCustomFaceActive={
+                defaultSelection.mode === 'custom_face' && Boolean(customFaceImg)
+              }
+              collectionUnlockedCount={collectionSummary.unlockedCount}
+              collectionTotalCount={collectionSummary.totalCount}
+              hasLegendTitle={collectionSummary.hasLegendTitle}
+              activeWorldId={activeWorldId}
+              worldUnlockedCount={worldSummary.unlockedCount}
+              worldTotalCount={worldSummary.totalCount}
+              hasWorldExplorerBadge={worldSummary.hasWorldExplorerBadge}
+              coins={currency.coins}
+              gems={currency.gems}
               onPlay={() => gameRef.current?.startReady()}
               onTwoPlayer={() => {
                 const current = loadStoredPlayerNames();
@@ -542,6 +691,15 @@ export default function App() {
                 setTwoPlayerDraftNames(updated);
                 gameRef.current?.setMenuState('TWO_PLAYER_SETUP');
               }}
+              onWorlds={() => {
+                setWorldFocusId(activeWorldId);
+                setWorldReturnState('MAIN_MENU');
+                gameRef.current?.setMenuState('WORLD_SELECT');
+              }}
+              onCharacters={() => {
+                setCharEditorTarget('default');
+                gameRef.current?.setMenuState('CHARACTER_COLLECTION');
+              }}
               onLeaderboard={() => gameRef.current?.setMenuState('LEADERBOARD')}
               onChangeFace={() => {
                 setCharEditorTarget('default');
@@ -555,6 +713,135 @@ export default function App() {
           </div>
         )}
 
+        {/* WORLD SELECT SCREEN */}
+        {uiState.state === 'WORLD_SELECT' && (
+          <div className="absolute inset-0 z-20">
+            <WorldSelectScreen
+              selectedWorldId={activeWorldId}
+              focusWorldId={worldFocusId}
+              weatherEnabled={settings.weatherEnabled}
+              dynamicSkyEnabled={settings.dynamicSkyEnabled}
+              metrics={unlockMetrics}
+              onSelectWorld={(id) => {
+                worldUnlockManager.selectWorld(id);
+                gameRef.current?.syncEnvironmentSettings();
+              }}
+              onSelectWeather={(id, w) => {
+                worldUnlockManager.setWeatherForWorld(id, w);
+                gameRef.current?.syncEnvironmentSettings();
+              }}
+              onPlayNow={() => {
+                if (worldReturnState === 'TWO_PLAYER_SETUP') {
+                  gameRef.current?.setMenuState('TWO_PLAYER_SETUP');
+                } else {
+                  gameRef.current?.startReady();
+                }
+              }}
+              onOpenCollection={() => gameRef.current?.setMenuState('WORLD_COLLECTION')}
+              onOpenEnvSettings={() => gameRef.current?.setMenuState('SETTINGS')}
+              onBack={() => gameRef.current?.setMenuState(worldReturnState)}
+            />
+          </div>
+        )}
+
+        {/* WORLD COLLECTION SCREEN */}
+        {uiState.state === 'WORLD_COLLECTION' && (
+          <div className="absolute inset-0 z-20">
+            <WorldCollectionScreen
+              selectedWorldId={activeWorldId}
+              metrics={unlockMetrics}
+              onInspectWorld={(id) => {
+                setWorldFocusId(id);
+                gameRef.current?.setMenuState('WORLD_SELECT');
+              }}
+              onBack={() => gameRef.current?.setMenuState('WORLD_SELECT')}
+            />
+          </div>
+        )}
+
+        {/* CHARACTER COLLECTION SCREEN */}
+        {uiState.state === 'CHARACTER_COLLECTION' && (
+          <div className="absolute inset-0 z-20">
+            <CharacterCollectionScreen
+              selection={defaultSelection}
+              selectedSkinId={defaultSkinId}
+              customFaceImg={customFaceImg}
+              favorites={characterFavorites.getFavorites('default')}
+              randomEveryRun={characterRandomizer.isRandomEveryRun('default')}
+              metrics={unlockMetrics}
+              onSelectGameCharacter={(id) => {
+                characterUnlockManager.selectGameCharacter(id, 'default');
+              }}
+              onSelectCustomFaceMode={() => {
+                characterUnlockManager.selectCustomFaceMode('default');
+              }}
+              onOpenCustomFaceEditor={() => {
+                setCharEditorTarget('default');
+                gameRef.current?.setMenuState('CHARACTER_EDITOR');
+              }}
+              onSelectSkin={(skinId: SkinId) => {
+                characterSkinManager.selectSkin(skinId, 'default');
+              }}
+              onToggleFavorite={(id) => {
+                characterFavorites.toggleFavorite(id, 'default');
+              }}
+              onToggleRandomEveryRun={() => {
+                characterRandomizer.toggleRandomEveryRun('default');
+              }}
+              onOpenProfile={(char) => {
+                setProfileTarget({ character: char, slot: 'default' });
+              }}
+              onOpenSelectScreen={(focusId) => {
+                setCharEditorTarget('default');
+                setSelectFocusCharId(focusId ?? null);
+                setSelectReturnState('CHARACTER_COLLECTION');
+                gameRef.current?.setMenuState('CHARACTER_SELECT');
+              }}
+              onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
+            />
+          </div>
+        )}
+
+        {/* CHARACTER SELECT SCREEN (1P OR P1 / P2 SLOT) */}
+        {uiState.state === 'CHARACTER_SELECT' && (
+          <div className="absolute inset-0 z-20">
+            <CharacterSelectScreen
+              key={charEditorTarget}
+              slot={charEditorTarget}
+              slotBadge={activeSlotBadge}
+              selection={characterUnlockManager.getSelection(charEditorTarget)}
+              selectedSkinId={characterSkinManager.getSelectedSkin(charEditorTarget)}
+              customFaceImg={activeEditorFaceImg}
+              favorites={characterFavorites.getFavorites(charEditorTarget)}
+              randomEveryRun={characterRandomizer.isRandomEveryRun(charEditorTarget)}
+              metrics={unlockMetrics}
+              initialFocusId={selectFocusCharId}
+              onSelectGameCharacter={(id) => {
+                characterUnlockManager.selectGameCharacter(id, charEditorTarget);
+              }}
+              onSelectCustomFaceMode={() => {
+                characterUnlockManager.selectCustomFaceMode(charEditorTarget);
+              }}
+              onOpenCustomFaceEditor={() => {
+                gameRef.current?.setMenuState('CHARACTER_EDITOR');
+              }}
+              onSelectSkin={(skinId: SkinId) => {
+                characterSkinManager.selectSkin(skinId, charEditorTarget);
+              }}
+              onToggleFavorite={(id) => {
+                characterFavorites.toggleFavorite(id, charEditorTarget);
+              }}
+              onToggleRandomEveryRun={() => {
+                characterRandomizer.toggleRandomEveryRun(charEditorTarget);
+              }}
+              onOpenProfile={(char) => {
+                setProfileTarget({ character: char, slot: charEditorTarget });
+              }}
+              onBack={() => gameRef.current?.setMenuState(selectReturnState)}
+            />
+          </div>
+        )}
+
         {/* 2 PLAYER / TOURNAMENT LOBBY SETUP */}
         {uiState.state === 'TWO_PLAYER_SETUP' && (
           <div className="absolute inset-0 z-20">
@@ -564,6 +851,32 @@ export default function App() {
               initialFormat={twoPlayerDraftNames.preferredFormat}
               player1FaceImg={player1FaceImg}
               player2FaceImg={player2FaceImg}
+              player1Selection={p1Selection}
+              player2Selection={p2Selection}
+              player1SkinId={p1SkinId}
+              player2SkinId={p2SkinId}
+              activeWorldId={activeWorldId}
+              onChangeWorld={(p1Name, p2Name, format) => {
+                const saved = saveStoredPlayerNames(p1Name, p2Name, format);
+                setTwoPlayerDraftNames(saved);
+                setWorldFocusId(activeWorldId);
+                setWorldReturnState('TWO_PLAYER_SETUP');
+                gameRef.current?.setMenuState('WORLD_SELECT');
+              }}
+              onSelectCharacter={(
+                slot: PlayerSlot,
+                p1Name: string,
+                p2Name: string,
+                format: MatchFormat
+              ) => {
+                const saved = saveStoredPlayerNames(p1Name, p2Name, format);
+                setTwoPlayerDraftNames(saved);
+                const slotKey: CharacterSlot = slot === 1 ? 'player1' : 'player2';
+                setCharEditorTarget(slotKey);
+                setSelectFocusCharId(characterUnlockManager.getSelection(slotKey).characterId);
+                setSelectReturnState('TWO_PLAYER_SETUP');
+                gameRef.current?.setMenuState('CHARACTER_SELECT');
+              }}
               onEditFace={(
                 slot: PlayerSlot,
                 p1Name: string,
@@ -597,6 +910,7 @@ export default function App() {
               customFaceImg={activeEditorFaceImg}
               targetManager={activeEditorManager}
               slotBadge={activeSlotBadge}
+              activeSkinId={activeEditorSkinId}
               onBack={() =>
                 gameRef.current?.setMenuState(
                   charEditorTarget === 'default' ? 'MAIN_MENU' : 'TWO_PLAYER_SETUP'
@@ -624,6 +938,7 @@ export default function App() {
             <AchievementCollectionUI
               achievements={achievements}
               bestScore={uiState.bestScore}
+              powerUpStats={currency.stats}
               onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
             />
           </div>
@@ -652,13 +967,27 @@ export default function App() {
                 setCharEditorTarget('default');
                 gameRef.current?.setMenuState('CHARACTER_EDITOR');
               }}
+              onOpenWorldSelect={() => {
+                setWorldFocusId(activeWorldId);
+                setWorldReturnState('SETTINGS');
+                gameRef.current?.setMenuState('WORLD_SELECT');
+              }}
+              onEnvironmentChange={() => {
+                gameRef.current?.syncEnvironmentSettings();
+              }}
+              onSkyThemeChange={() => {
+                gameRef.current?.syncExternalVisuals();
+              }}
               onResetProgression={() => gameRef.current?.resetProgression()}
               onResetAllData={async () => {
                 gameRef.current?.resetProgression();
+                gameRef.current?.resetCollectionAndSkins();
                 settingsManager.resetToDefaults();
                 leaderboardManager.reset();
                 resetStoredPlayerNames();
                 setTwoPlayerDraftNames(loadStoredPlayerNames());
+                setCharacterUnlockQueue([]);
+                setWorldUnlockQueue([]);
                 await Promise.all([
                   characterManager.removePhoto(),
                   player1CharacterManager.removePhoto(),
@@ -677,6 +1006,68 @@ export default function App() {
           <div className="absolute inset-0 z-20">
             <AboutPanel onBack={() => gameRef.current?.setMenuState('MAIN_MENU')} />
           </div>
+        )}
+
+        {/* CHARACTER PROFILE MODAL */}
+        {profileTarget && (
+          <CharacterProfileScreen
+            character={profileTarget.character}
+            slot={profileTarget.slot}
+            metrics={unlockMetrics}
+            isFavorite={characterFavorites.isFavorite(
+              profileTarget.character.id,
+              profileTarget.slot
+            )}
+            isEquipped={
+              characterUnlockManager.getSelection(profileTarget.slot).mode === 'character' &&
+              characterUnlockManager.getSelection(profileTarget.slot).characterId ===
+                profileTarget.character.id
+            }
+            selectedSkinId={characterSkinManager.getSelectedSkin(profileTarget.slot)}
+            onToggleFavorite={(id) => {
+              characterFavorites.toggleFavorite(id, profileTarget.slot);
+            }}
+            onEquipCharacter={(id) => {
+              characterUnlockManager.selectGameCharacter(id, profileTarget.slot);
+            }}
+            onSelectSkin={(skinId) => {
+              characterSkinManager.selectSkin(skinId, profileTarget.slot);
+            }}
+            onClose={() => setProfileTarget(null)}
+          />
+        )}
+
+        {/* CHARACTER UNLOCK REWARD POPUP (SUPPRESSED DURING ACTIVE FLIGHT) */}
+        {!isFlightOrCountdown && characterUnlockQueue.length > 0 && (
+          <CharacterUnlockPopup
+            queue={characterUnlockQueue}
+            onEquipNow={(id) => {
+              characterUnlockManager.selectGameCharacter(id, 'default');
+              gameRef.current?.syncExternalVisuals();
+              setCharacterUnlockQueue((prev) => prev.slice(1));
+            }}
+            onLater={() => {
+              setCharacterUnlockQueue((prev) => prev.slice(1));
+            }}
+          />
+        )}
+
+        {/* WORLD UNLOCK REWARD POPUP (SHOWS AFTER CHARACTER POPUP QUEUE OR IMMEDIATELY OUTSIDE FLIGHT) */}
+        {!isFlightOrCountdown && characterUnlockQueue.length === 0 && worldUnlockQueue.length > 0 && (
+          <WorldUnlockPopup
+            queue={worldUnlockQueue}
+            onExploreNow={(worldId) => {
+              worldUnlockManager.selectWorld(worldId);
+              gameRef.current?.syncEnvironmentSettings();
+              setWorldFocusId(worldId);
+              setWorldReturnState('MAIN_MENU');
+              setWorldUnlockQueue((prev) => prev.slice(1));
+              gameRef.current?.setMenuState('WORLD_SELECT');
+            }}
+            onLater={() => {
+              setWorldUnlockQueue((prev) => prev.slice(1));
+            }}
+          />
         )}
 
         {/* PRIVACY POLICY MODAL */}
@@ -724,6 +1115,16 @@ export default function App() {
           />
         )}
 
+        {/* SECOND CHANCE REVIVE DIALOG */}
+        {uiState.state === 'REVIVE_PROMPT' && (
+          <ReviveDialog
+            remainingSec={uiState.reviveRemainingSec}
+            score={uiState.score}
+            onRevive={() => gameRef.current?.acceptRevive()}
+            onGiveUp={() => gameRef.current?.declineRevive()}
+          />
+        )}
+
         {/* SINGLE PLAYER GAME OVER OVERLAY */}
         {uiState.state === 'GAME_OVER' && uiState.isGameOverPanelReady && (
           <GameOverOverlay
@@ -731,6 +1132,13 @@ export default function App() {
             bestScore={uiState.bestScore}
             isNewBest={uiState.isNewBest}
             reaction={uiState.gameOverReaction}
+            characterId={uiState.activeCharacterId}
+            skinId={uiState.activeSkinId}
+            customFaceImg={
+              defaultSelection.mode === 'custom_face' && customFaceImg ? customFaceImg : null
+            }
+            runCoins={uiState.runCoinsCollected}
+            runGems={uiState.runGemsCollected}
             onRetry={() => gameRef.current?.restart()}
             onHome={() => gameRef.current?.setMenuState('MAIN_MENU')}
           />
@@ -751,6 +1159,17 @@ export default function App() {
               maxRounds={uiState.twoPlayerMatch.maxRounds}
               score={uiState.score}
               reaction={uiState.gameOverReaction}
+              characterId={uiState.activeCharacterId}
+              skinId={uiState.activeSkinId}
+              customFaceImg={
+                uiState.state === 'PLAYER_1_GAME_OVER'
+                  ? p1Selection.mode === 'custom_face' && player1FaceImg
+                    ? player1FaceImg
+                    : null
+                  : p2Selection.mode === 'custom_face' && player2FaceImg
+                    ? player2FaceImg
+                    : null
+              }
               onContinue={() => {
                 if (uiState.state === 'PLAYER_1_GAME_OVER') {
                   gameRef.current?.continueFromPlayer1GameOver();
@@ -767,7 +1186,11 @@ export default function App() {
             player1Name={uiState.twoPlayerMatch.player1Name}
             player1Score={uiState.twoPlayerMatch.player1Score ?? 0}
             player2Name={uiState.twoPlayerMatch.player2Name}
-            player2FaceImg={player2FaceImg}
+            player2FaceImg={
+              p2Selection.mode === 'custom_face' && player2FaceImg ? player2FaceImg : null
+            }
+            player2CharacterId={p2Selection.characterId}
+            player2SkinId={p2SkinId}
             currentRound={uiState.twoPlayerMatch.currentRound}
             maxRounds={uiState.twoPlayerMatch.maxRounds}
             player1Wins={uiState.twoPlayerMatch.player1Wins}
@@ -788,8 +1211,16 @@ export default function App() {
         {uiState.state === 'MATCH_RESULT' && uiState.twoPlayerMatch && (
           <MatchResultOverlay
             match={uiState.twoPlayerMatch}
-            player1FaceImg={player1FaceImg}
-            player2FaceImg={player2FaceImg}
+            player1FaceImg={
+              p1Selection.mode === 'custom_face' && player1FaceImg ? player1FaceImg : null
+            }
+            player2FaceImg={
+              p2Selection.mode === 'custom_face' && player2FaceImg ? player2FaceImg : null
+            }
+            player1CharacterId={p1Selection.characterId}
+            player1SkinId={p1SkinId}
+            player2CharacterId={p2Selection.characterId}
+            player2SkinId={p2SkinId}
             winnerWinStreak={
               uiState.twoPlayerMatch.winner === 'player1'
                 ? (leaderboardManager.getPlayerStats(

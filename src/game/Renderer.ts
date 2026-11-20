@@ -4,6 +4,7 @@ import { Ground } from './Ground';
 import { ParticleSystem } from './ParticleSystem';
 import { PipeManager } from './PipeManager';
 import { Player } from './Player';
+import { PowerUpManager } from './powerups/PowerUpManager';
 import { Score } from './Score';
 
 export class Renderer {
@@ -110,7 +111,8 @@ export class Renderer {
     ground: Ground,
     player: Player,
     score: Score,
-    elapsedTime: number
+    elapsedTime: number,
+    powerUps?: PowerUpManager
   ): void {
     const ctx = this.ctx;
     const { worldWidth, worldHeight, groundHeight } = GAME_CONFIG;
@@ -125,13 +127,35 @@ export class Renderer {
     }
 
     background.draw(ctx);
+    background.drawWeatherOverlay(ctx);
+
+    const showGameplayEntities =
+      state === 'PLAYING' ||
+      state === 'PAUSED' ||
+      state === 'REVIVE_PROMPT' ||
+      state === 'GAME_OVER' ||
+      state === 'PLAYER_1_PLAYING' ||
+      state === 'PLAYER_1_GAME_OVER' ||
+      state === 'PLAYER_2_PLAYING' ||
+      state === 'PLAYER_2_GAME_OVER';
+
+    if (powerUps && showGameplayEntities) {
+      powerUps.drawScreenTint(ctx);
+    }
+
     pipes.draw(ctx, groundY);
+
+    if (powerUps && showGameplayEntities) {
+      powerUps.drawWorldItems(ctx, player);
+    }
+
     ground.draw(ctx);
 
     const showGameplayBird =
       state === 'READY' ||
       state === 'PLAYING' ||
       state === 'PAUSED' ||
+      state === 'REVIVE_PROMPT' ||
       state === 'GAME_OVER' ||
       state === 'PLAYER_1_READY' ||
       state === 'PLAYER_1_PLAYING' ||
@@ -140,7 +164,18 @@ export class Renderer {
       state === 'PLAYER_2_PLAYING' ||
       state === 'PLAYER_2_GAME_OVER';
     if (showGameplayBird) {
+      if (background.isDarkWorld()) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.visualRadius + 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
       player.draw(ctx);
+      if (powerUps && showGameplayEntities) {
+        powerUps.drawPlayerAuras(ctx, player);
+      }
     }
 
     this.particles.draw(ctx);
@@ -148,6 +183,7 @@ export class Renderer {
     if (
       state === 'PLAYING' ||
       state === 'PAUSED' ||
+      state === 'REVIVE_PROMPT' ||
       state === 'PLAYER_1_PLAYING' ||
       state === 'PLAYER_2_PLAYING'
     ) {

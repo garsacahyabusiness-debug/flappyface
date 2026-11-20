@@ -93,8 +93,14 @@ export class ParticleSystem {
     }
   }
 
-  public spawnFlapPuff(x: number, y: number): void {
+  public spawnFlapPuff(
+    x: number,
+    y: number,
+    trailColors: readonly string[] = ['#FFFFFF', '#FFF199'],
+    particleKind: ParticleKind = 'feather'
+  ): void {
     const count = this.reducedMotion ? 1 : this.lowDetail ? 2 : 4;
+    const palette = trailColors.length > 0 ? trailColors : ['#FFFFFF', '#FFF199'];
     for (let i = 0; i < count; i++) {
       this.spawnOne({
         x: x - 14 + (Math.random() - 0.5) * 8,
@@ -103,11 +109,11 @@ export class ParticleSystem {
         vy: 20 + Math.random() * 50,
         gravity: 160,
         size: 3.5 + Math.random() * 2.5,
-        color: i % 2 === 0 ? '#FFFFFF' : '#FFF199',
+        color: palette[i % palette.length],
         maxLife: 0.34 + Math.random() * 0.14,
         rotation: Math.random() * Math.PI,
         vRot: (Math.random() - 0.5) * 6,
-        kind: 'feather',
+        kind: particleKind,
       });
     }
   }

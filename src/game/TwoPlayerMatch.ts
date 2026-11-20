@@ -41,6 +41,11 @@ export interface TwoPlayerMatchData {
   status: MatchStatus;
   winner: MatchWinner | null;
   recordedToHistory: boolean;
+  roundSeed: number;
+}
+
+export function generateRoundSeed(): number {
+  return Math.floor(Math.random() * 0x7fffffff) + 1;
 }
 
 export interface TwoPlayerStoredNames {
@@ -203,6 +208,7 @@ export function createInitialMatchData(
     status: 'setup',
     winner: null,
     recordedToHistory: false,
+    roundSeed: generateRoundSeed(),
   };
 }
 

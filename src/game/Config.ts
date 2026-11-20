@@ -1,5 +1,9 @@
 export type GameState =
   | 'MAIN_MENU'
+  | 'WORLD_SELECT'
+  | 'WORLD_COLLECTION'
+  | 'CHARACTER_COLLECTION'
+  | 'CHARACTER_SELECT'
   | 'CHARACTER_EDITOR'
   | 'LEADERBOARD'
   | 'ACHIEVEMENTS'
@@ -9,6 +13,7 @@ export type GameState =
   | 'READY'
   | 'PLAYING'
   | 'PAUSED'
+  | 'REVIVE_PROMPT'
   | 'GAME_OVER'
   | 'TWO_PLAYER_SETUP'
   | 'PLAYER_1_READY'

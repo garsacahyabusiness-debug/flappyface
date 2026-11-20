@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Award, Crown, Feather, Flame, Sparkles, Trophy } from 'lucide-react';
+import {
+  Award,
+  Coins,
+  Crown,
+  Feather,
+  Flame,
+  Gem,
+  Heart,
+  Shield,
+  Sparkles,
+  Star,
+  Trophy,
+  Zap,
+} from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
 import { AchievementIconName, AchievementRecord } from '../game/progression/AchievementManager';
 
@@ -22,6 +35,18 @@ export function renderAchievementIcon(icon: AchievementIconName, className = 'h-
       return <Crown className={className} />;
     case 'sparkles':
       return <Sparkles className={className} />;
+    case 'shield':
+      return <Shield className={className} />;
+    case 'heart':
+      return <Heart className={className} />;
+    case 'coins':
+      return <Coins className={className} />;
+    case 'gem':
+      return <Gem className={className} />;
+    case 'zap':
+      return <Zap className={className} />;
+    case 'star':
+      return <Star className={className} />;
   }
 }
 

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Play } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { getCharacterById } from '../game/character/CharacterRegistry';
+import { SkinId } from '../game/character/CharacterSkinManager';
 import { pickTurnChallengeMessage } from '../game/TwoPlayerMatch';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 
@@ -9,6 +11,8 @@ interface TurnTransitionOverlayProps {
   player1Score: number;
   player2Name: string;
   player2FaceImg: HTMLImageElement | null;
+  player2CharacterId?: string;
+  player2SkinId?: SkinId;
   currentRound: number;
   maxRounds: number;
   player1Wins: number;
@@ -21,6 +25,8 @@ export const TurnTransitionOverlay: React.FC<TurnTransitionOverlayProps> = ({
   player1Score,
   player2Name,
   player2FaceImg,
+  player2CharacterId = 'chicky',
+  player2SkinId = 'default',
   currentRound,
   maxRounds,
   player1Wins,
@@ -28,6 +34,7 @@ export const TurnTransitionOverlay: React.FC<TurnTransitionOverlayProps> = ({
   onStartTurn,
 }) => {
   const challengeText = pickTurnChallengeMessage(player1Score);
+  const p2Char = getCharacterById(player2CharacterId);
 
   return (
     <div
@@ -51,7 +58,13 @@ export const TurnTransitionOverlay: React.FC<TurnTransitionOverlayProps> = ({
 
         {/* Player 2 Character Showcase */}
         <div className="mx-auto mt-2 inline-flex flex-col items-center rounded-3xl bg-[#FFF2F2] px-5 py-1">
-          <CharacterShowcaseCanvas customFaceImg={player2FaceImg} size={92} />
+          <CharacterShowcaseCanvas
+            customFaceImg={player2FaceImg}
+            characterId={player2CharacterId}
+            skinId={player2SkinId}
+            rarity={player2FaceImg ? undefined : p2Char.rarity}
+            size={92}
+          />
         </div>
 
         <p className="mt-2.5 text-xs font-extrabold text-[#24415C]/85">{challengeText}</p>

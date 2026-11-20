@@ -1,18 +1,42 @@
 import React from 'react';
 import { ArrowLeft, CheckCircle2, Lock, Trophy } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { PowerUpCurrencyStats } from '../game/powerups/CurrencyManager';
 import { AchievementRecord } from '../game/progression/AchievementManager';
 import { renderAchievementIcon } from './AchievementPopup';
 
 interface AchievementCollectionUIProps {
   achievements: AchievementRecord[];
   bestScore: number;
+  powerUpStats?: PowerUpCurrencyStats;
   onBack: () => void;
+}
+
+function resolveProgressValue(item: AchievementRecord, bestScore: number, stats?: PowerUpCurrencyStats): number {
+  if (item.unlocked) return item.requirement;
+  switch (item.requirementType) {
+    case 'shield_saves':
+      return stats?.shieldSaves ?? 0;
+    case 'revives':
+      return stats?.revivesUsed ?? 0;
+    case 'coins':
+      return stats?.totalCoinsCollected ?? 0;
+    case 'gems':
+      return stats?.totalGemsCollected ?? 0;
+    case 'powerups_total':
+      return stats?.totalPowerUpsCollected ?? 0;
+    case 'powerups_run':
+      return 0;
+    case 'score':
+    default:
+      return bestScore;
+  }
 }
 
 export const AchievementCollectionUI: React.FC<AchievementCollectionUIProps> = ({
   achievements,
   bestScore,
+  powerUpStats,
   onBack,
 }) => {
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
@@ -49,9 +73,8 @@ export const AchievementCollectionUI: React.FC<AchievementCollectionUIProps> = (
       <div className="mx-auto mt-1 w-full max-w-[350px] flex-1 overflow-y-auto pb-3">
         <div className="anim-panel-pop game-panel space-y-3 p-4">
           {achievements.map((item) => {
-            const currentProgress = item.unlocked
-              ? item.requirement
-              : Math.min(bestScore, item.requirement);
+            const rawProgress = resolveProgressValue(item, bestScore, powerUpStats);
+            const currentProgress = Math.min(rawProgress, item.requirement);
             const pct = Math.min(100, Math.round((currentProgress / item.requirement) * 100));
 
             return (

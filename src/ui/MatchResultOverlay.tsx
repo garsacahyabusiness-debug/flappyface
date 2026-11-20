@@ -1,6 +1,8 @@
 import React from 'react';
 import { Crown, Flame, Home, RotateCcw, Trophy, Users } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { getCharacterById } from '../game/character/CharacterRegistry';
+import { SkinId } from '../game/character/CharacterSkinManager';
 import { pickMatchOutcomeReaction } from '../game/GameOverReaction';
 import { MATCH_FORMAT_CONFIG, TwoPlayerMatchData } from '../game/TwoPlayerMatch';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
@@ -9,6 +11,10 @@ interface MatchResultOverlayProps {
   match: TwoPlayerMatchData;
   player1FaceImg: HTMLImageElement | null;
   player2FaceImg: HTMLImageElement | null;
+  player1CharacterId?: string;
+  player1SkinId?: SkinId;
+  player2CharacterId?: string;
+  player2SkinId?: SkinId;
   winnerWinStreak?: number;
   onRematch: () => void;
   onChangePlayer: () => void;
@@ -19,11 +25,17 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
   match,
   player1FaceImg,
   player2FaceImg,
+  player1CharacterId = 'classic_bird',
+  player1SkinId = 'default',
+  player2CharacterId = 'chicky',
+  player2SkinId = 'default',
   winnerWinStreak = 0,
   onRematch,
   onChangePlayer,
   onMainMenu,
 }) => {
+  const p1Char = getCharacterById(player1CharacterId);
+  const p2Char = getCharacterById(player2CharacterId);
   const isTournament = match.format !== 'quick';
   const formatMeta = MATCH_FORMAT_CONFIG[match.format];
   const p1DisplayValue = isTournament ? match.player1Wins : (match.player1Score ?? 0);
@@ -124,7 +136,13 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
               {match.player1Name}
             </div>
             <div className="my-0.5">
-              <CharacterShowcaseCanvas customFaceImg={player1FaceImg} size={56} />
+              <CharacterShowcaseCanvas
+                customFaceImg={player1FaceImg}
+                characterId={player1CharacterId}
+                skinId={player1SkinId}
+                rarity={player1FaceImg ? undefined : p1Char.rarity}
+                size={56}
+              />
             </div>
             <div className="font-display text-3xl leading-none font-bold tabular-nums text-[#3998F7]">
               {p1DisplayValue}
@@ -154,7 +172,13 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
               {match.player2Name}
             </div>
             <div className="my-0.5">
-              <CharacterShowcaseCanvas customFaceImg={player2FaceImg} size={56} />
+              <CharacterShowcaseCanvas
+                customFaceImg={player2FaceImg}
+                characterId={player2CharacterId}
+                skinId={player2SkinId}
+                rarity={player2FaceImg ? undefined : p2Char.rarity}
+                size={56}
+              />
             </div>
             <div className="font-display text-3xl leading-none font-bold tabular-nums text-[#FF6B6B]">
               {p2DisplayValue}

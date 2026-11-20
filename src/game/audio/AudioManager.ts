@@ -1,3 +1,5 @@
+import { AmbientAudioManager } from '../worlds/AmbientAudioManager';
+import { AmbientSoundType } from '../worlds/WorldRegistry';
 import { AUDIO_CONFIG } from './AudioConfig';
 import { MusicController } from './MusicController';
 import { SoundGenerator } from './SoundGenerator';
@@ -8,6 +10,7 @@ export interface AudioVolumes {
   sfxVolume: number;
   musicEnabled: boolean;
   sfxEnabled: boolean;
+  ambientEnabled?: boolean;
 }
 
 function clamp01(v: number): number {
@@ -19,9 +22,11 @@ export class AudioManager {
   private masterGain: GainNode | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
+  private ambientGain: GainNode | null = null;
 
   private soundGen = new SoundGenerator();
   private musicCtrl = new MusicController();
+  private ambientCtrl = new AmbientAudioManager();
 
   private config: AudioVolumes = {
     masterVolume: AUDIO_CONFIG.defaults.masterVolume,
@@ -29,10 +34,12 @@ export class AudioManager {
     sfxVolume: AUDIO_CONFIG.defaults.sfxVolume,
     musicEnabled: true,
     sfxEnabled: true,
+    ambientEnabled: true,
   };
 
   private unlocked = false;
   private musicDesired = false;
+  private ambientType: AmbientSoundType = 'breeze';
   private gameplayPaused = false;
   private pageHidden = false;
 
@@ -41,8 +48,14 @@ export class AudioManager {
     if (this.pageHidden) {
       this.fadeOutMusic();
       this.musicCtrl.pause();
-    } else if (this.musicDesired && !this.gameplayPaused && this.config.musicEnabled) {
-      this.ensureMusicRunning();
+      this.ambientCtrl.stop();
+    } else if (!this.gameplayPaused) {
+      if (this.musicDesired && this.config.musicEnabled) {
+        this.ensureMusicRunning();
+      }
+      if (this.config.ambientEnabled) {
+        this.ensureAmbientRunning();
+      }
     }
   };
 
@@ -54,6 +67,7 @@ export class AudioManager {
 
   public destroy(): void {
     this.stopMusic();
+    this.ambientCtrl.stop();
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     }
@@ -86,9 +100,11 @@ export class AudioManager {
         this.masterGain = this.ctx.createGain();
         this.musicGain = this.ctx.createGain();
         this.sfxGain = this.ctx.createGain();
+        this.ambientGain = this.ctx.createGain();
 
         this.musicGain.connect(this.masterGain);
         this.sfxGain.connect(this.masterGain);
+        this.ambientGain.connect(this.masterGain);
         this.masterGain.connect(this.ctx.destination);
 
         this.applyGainValues(true);
@@ -106,6 +122,17 @@ export class AudioManager {
     if (this.musicDesired && !this.gameplayPaused && this.config.musicEnabled && !this.pageHidden) {
       this.ensureMusicRunning();
     }
+    if (this.config.ambientEnabled && !this.gameplayPaused && !this.pageHidden) {
+      this.ensureAmbientRunning();
+    }
+  }
+
+  public setAmbientType(type: AmbientSoundType): void {
+    this.ambientType = type;
+    this.ambientCtrl.setType(type);
+    if (this.unlocked && this.config.ambientEnabled && !this.gameplayPaused && !this.pageHidden) {
+      this.ensureAmbientRunning();
+    }
   }
 
   public applySettings(next: AudioVolumes): void {
@@ -115,6 +142,10 @@ export class AudioManager {
       sfxVolume: clamp01(next.sfxVolume),
       musicEnabled: Boolean(next.musicEnabled),
       sfxEnabled: Boolean(next.sfxEnabled),
+      ambientEnabled:
+        typeof next.ambientEnabled === 'boolean'
+          ? next.ambientEnabled
+          : this.config.ambientEnabled,
     };
 
     this.applyGainValues(false);
@@ -124,10 +155,16 @@ export class AudioManager {
     } else if (this.unlocked && this.musicDesired && !this.gameplayPaused && !this.pageHidden) {
       this.ensureMusicRunning();
     }
+
+    if (!this.config.ambientEnabled) {
+      this.ambientCtrl.stop();
+    } else if (this.unlocked && !this.gameplayPaused && !this.pageHidden) {
+      this.ensureAmbientRunning();
+    }
   }
 
   private applyGainValues(immediate: boolean): void {
-    if (!this.ctx || !this.masterGain || !this.musicGain || !this.sfxGain) return;
+    if (!this.ctx || !this.masterGain || !this.musicGain || !this.sfxGain || !this.ambientGain) return;
     const now = this.ctx.currentTime;
     const masterTarget = clamp01(this.config.masterVolume);
     const musicTarget =
@@ -137,15 +174,21 @@ export class AudioManager {
     const sfxTarget = this.config.sfxEnabled
       ? clamp01(this.config.sfxVolume) * AUDIO_CONFIG.maxSfxGain
       : 0;
+    const ambientTarget =
+      this.config.ambientEnabled && !this.gameplayPaused && !this.pageHidden
+        ? AUDIO_CONFIG.maxAmbientGain
+        : 0;
 
     if (immediate) {
       this.masterGain.gain.setValueAtTime(masterTarget, now);
       this.musicGain.gain.setValueAtTime(musicTarget, now);
       this.sfxGain.gain.setValueAtTime(sfxTarget, now);
+      this.ambientGain.gain.setValueAtTime(ambientTarget, now);
     } else {
       this.masterGain.gain.setTargetAtTime(masterTarget, now, 0.025);
       this.musicGain.gain.setTargetAtTime(musicTarget, now, 0.035);
       this.sfxGain.gain.setTargetAtTime(sfxTarget, now, 0.025);
+      this.ambientGain.gain.setTargetAtTime(ambientTarget, now, 0.05);
     }
   }
 
@@ -159,6 +202,16 @@ export class AudioManager {
     this.musicCtrl.start(this.ctx, this.musicGain);
   }
 
+  private ensureAmbientRunning(): void {
+    if (!this.unlocked || !this.ctx || !this.ambientGain) return;
+    if (!this.config.ambientEnabled || this.gameplayPaused || this.pageHidden) return;
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
+    this.applyGainValues(false);
+    this.ambientCtrl.start(this.ctx, this.ambientGain, this.ambientType);
+  }
+
   private fadeOutMusic(): void {
     if (!this.ctx || !this.musicGain) return;
     const now = this.ctx.currentTime;
@@ -169,6 +222,9 @@ export class AudioManager {
     this.musicDesired = true;
     this.gameplayPaused = false;
     this.ensureMusicRunning();
+    if (this.config.ambientEnabled) {
+      this.ensureAmbientRunning();
+    }
   }
 
   public stopMusic(): void {
@@ -181,6 +237,7 @@ export class AudioManager {
     this.gameplayPaused = true;
     this.fadeOutMusic();
     this.musicCtrl.pause();
+    this.ambientCtrl.stop();
   }
 
   public resumeGameplayAudio(): void {
@@ -190,6 +247,9 @@ export class AudioManager {
         this.applyGainValues(false);
         this.musicCtrl.resume(this.ctx, this.musicGain);
       }
+    }
+    if (this.config.ambientEnabled && !this.pageHidden) {
+      this.ensureAmbientRunning();
     }
   }
 
@@ -262,6 +322,79 @@ export class AudioManager {
     this.unlock();
     const ready = this.canPlaySfx(true);
     if (ready) this.soundGen.playDraw(ready.ctx, ready.out);
+  }
+
+  public playCharacterSelect(): void {
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playCharacterSelect(ready.ctx, ready.out);
+  }
+
+  public playCharacterUnlock(tier: 'standard' | 'rare' | 'mythic' = 'standard'): void {
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playCharacterUnlock(ready.ctx, ready.out, tier);
+  }
+
+  public playPowerUpSpawn(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playPowerUpSpawn(ready.ctx, ready.out);
+  }
+
+  public playPowerUpCollect(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playPowerUpCollect(ready.ctx, ready.out);
+  }
+
+  public playShieldActivate(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playShieldActivate(ready.ctx, ready.out);
+  }
+
+  public playShieldBreak(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playShieldBreak(ready.ctx, ready.out);
+  }
+
+  public playRevive(): void {
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playRevive(ready.ctx, ready.out);
+  }
+
+  public playMagnet(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playMagnet(ready.ctx, ready.out);
+  }
+
+  public playScoreBoost(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playScoreBoost(ready.ctx, ready.out);
+  }
+
+  public playSlowMotion(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playSlowMotion(ready.ctx, ready.out);
+  }
+
+  public playFeather(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playFeather(ready.ctx, ready.out);
+  }
+
+  public playCoinCollect(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playCoinCollect(ready.ctx, ready.out);
+  }
+
+  public playStarCollect(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playStarCollect(ready.ctx, ready.out);
+  }
+
+  public playGemCollect(): void {
+    const ready = this.canPlaySfx(false);
+    if (ready) this.soundGen.playGemCollect(ready.ctx, ready.out);
   }
 }
 

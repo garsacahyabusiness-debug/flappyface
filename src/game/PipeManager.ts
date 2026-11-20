@@ -1,6 +1,7 @@
 import { GAME_CONFIG, PipeTheme } from './Config';
 import { Pipe } from './Pipe';
 import { difficultyManager, DifficultySnapshot } from './progression/DifficultyManager';
+import { WorldPipeSkin } from './worlds/WorldRegistry';
 
 const PIPE_THEMES: PipeTheme[] = ['green', 'mint', 'blue', 'purple'];
 
@@ -14,6 +15,18 @@ export class PipeManager {
   private lastGapY: number | null = null;
   private spawnedCount = 0;
   private currentDifficulty: DifficultySnapshot = difficultyManager.getForScore(0);
+  private pipeSkin: WorldPipeSkin = 'classic_green';
+
+  public setPipeSkin(skin: WorldPipeSkin): void {
+    this.pipeSkin = skin;
+    for (const p of this.pipes) {
+      p.pipeSkin = skin;
+    }
+  }
+
+  public getPipeSkin(): WorldPipeSkin {
+    return this.pipeSkin;
+  }
 
   public reset(): void {
     this.pipes = [];
@@ -31,19 +44,20 @@ export class PipeManager {
     return this.currentDifficulty;
   }
 
-  public update(dt: number, currentScore = 0): void {
+  public update(dt: number, currentScore = 0, speedMultiplier = 1): void {
     this.currentDifficulty = difficultyManager.getForScore(currentScore);
     const { speed, spawnInterval } = this.currentDifficulty;
+    const effectiveSpeed = speed * speedMultiplier;
 
     for (const pipe of this.pipes) {
-      pipe.update(dt, speed);
+      pipe.update(dt, effectiveSpeed);
     }
 
     while (this.pipes.length > 0 && this.pipes[0].isOffScreen()) {
       this.pipes.shift();
     }
 
-    this.spawnTimer -= dt;
+    this.spawnTimer -= dt * speedMultiplier;
     if (this.spawnTimer <= 0) {
       this.spawnPipe(this.currentDifficulty);
       this.spawnTimer += spawnInterval;
@@ -73,7 +87,7 @@ export class PipeManager {
     const theme = PIPE_THEMES[Math.floor(this.spawnedCount / 4) % PIPE_THEMES.length];
     this.spawnedCount += 1;
 
-    this.pipes.push(new Pipe(worldWidth + 24, gapY, gap, theme));
+    this.pipes.push(new Pipe(worldWidth + 24, gapY, gap, theme, this.pipeSkin));
   }
 
   public draw(ctx: CanvasRenderingContext2D, groundY: number): void {

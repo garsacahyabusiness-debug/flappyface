@@ -12,7 +12,12 @@ export class Physics {
     player.onFlap();
   }
 
-  public updatePlayer(player: Player, dt: number): void {
+  public updatePlayer(
+    player: Player,
+    dt: number,
+    gravityScale = 1,
+    maxFallScale = 1
+  ): void {
     const {
       gravity,
       flapStrength,
@@ -24,15 +29,18 @@ export class Physics {
       rotationDownSpeed,
     } = GAME_CONFIG.physics;
 
+    const effectiveGravity = gravity * gravityScale;
+    const effectiveMaxFall = maxDownwardVelocity * maxFallScale;
+
     // Frame-rate independent velocity integration
-    player.vy = clamp(player.vy + gravity * dt, maxUpwardVelocity, maxDownwardVelocity);
+    player.vy = clamp(player.vy + effectiveGravity * dt, maxUpwardVelocity, effectiveMaxFall);
     player.y += player.vy * dt;
 
     // Smooth pitch rotation driven by vertical velocity
     const targetRotation =
       player.vy < 0
         ? clamp((player.vy / Math.abs(flapStrength)) * Math.abs(minRotation), minRotation, 0)
-        : clamp((player.vy / maxDownwardVelocity) * maxRotation, 0, maxRotation);
+        : clamp((player.vy / effectiveMaxFall) * maxRotation, 0, maxRotation);
 
     const rotSpeed = player.vy < 0 ? rotationUpSpeed : rotationDownSpeed;
     player.rotation += (targetRotation - player.rotation) * Math.min(1, dt * rotSpeed);

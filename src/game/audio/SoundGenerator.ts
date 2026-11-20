@@ -140,6 +140,119 @@ export class SoundGenerator {
     this.playTone(ctx, output, 587.33, 'sine', now + 0.22, 0.22, 0.17);
   }
 
+  public playCharacterSelect(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 659.25, 'sine', now, 0.06, 0.14);
+    this.playTone(ctx, output, 987.77, 'triangle', now + 0.04, 0.1, 0.15);
+  }
+
+  public playCharacterUnlock(
+    ctx: AudioContext,
+    output: GainNode,
+    tier: 'standard' | 'rare' | 'mythic' = 'standard'
+  ): void {
+    const now = ctx.currentTime;
+    const notes =
+      tier === 'mythic'
+        ? [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98]
+        : tier === 'rare'
+          ? [523.25, 659.25, 783.99, 1046.5, 1318.51]
+          : [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'triangle', now + idx * 0.065, 0.24, 0.18);
+    });
+  }
+
+  public playPowerUpSpawn(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 587.33, 'sine', now, 0.06, 0.07);
+    this.playTone(ctx, output, 880.0, 'sine', now + 0.04, 0.08, 0.08);
+  }
+
+  public playPowerUpCollect(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 659.25, 'triangle', now, 0.07, 0.14);
+    this.playTone(ctx, output, 987.77, 'triangle', now + 0.05, 0.12, 0.16);
+  }
+
+  public playShieldActivate(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 440, 'sine', now, 0.08, 0.14);
+    this.playTone(ctx, output, 659.25, 'sine', now + 0.04, 0.12, 0.16);
+    this.playTone(ctx, output, 880, 'triangle', now + 0.09, 0.14, 0.15);
+  }
+
+  public playShieldBreak(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 780, 'triangle', now, 0.07, 0.17);
+    this.playTone(ctx, output, 520, 'triangle', now + 0.04, 0.1, 0.16);
+    this.playTone(ctx, output, 340, 'sine', now + 0.09, 0.14, 0.14);
+  }
+
+  public playRevive(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'sine', now + idx * 0.055, 0.2, 0.16);
+    });
+  }
+
+  public playMagnet(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 493.88, 'sine', now, 0.09, 0.14);
+    this.playTone(ctx, output, 739.99, 'sine', now + 0.06, 0.13, 0.15);
+  }
+
+  public playScoreBoost(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 783.99, 'triangle', now, 0.06, 0.15);
+    this.playTone(ctx, output, 1046.5, 'triangle', now + 0.045, 0.08, 0.17);
+    this.playTone(ctx, output, 1567.98, 'triangle', now + 0.09, 0.14, 0.16);
+  }
+
+  public playSlowMotion(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(640, now);
+    osc.frequency.exponentialRampToValueAtTime(310, now + 0.24);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    osc.connect(gain);
+    gain.connect(output);
+    osc.start(now);
+    osc.stop(now + 0.26);
+  }
+
+  public playFeather(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 587.33, 'sine', now, 0.09, 0.13);
+    this.playTone(ctx, output, 880, 'sine', now + 0.05, 0.14, 0.13);
+  }
+
+  public playCoinCollect(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 1174.66, 'sine', now, 0.055, 0.13);
+    this.playTone(ctx, output, 1567.98, 'sine', now + 0.04, 0.09, 0.14);
+  }
+
+  public playStarCollect(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 987.77, 'triangle', now, 0.06, 0.15);
+    this.playTone(ctx, output, 1318.51, 'triangle', now + 0.045, 0.07, 0.16);
+    this.playTone(ctx, output, 1760, 'sine', now + 0.09, 0.12, 0.15);
+  }
+
+  public playGemCollect(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    this.playTone(ctx, output, 1046.5, 'sine', now, 0.06, 0.16);
+    this.playTone(ctx, output, 1318.51, 'sine', now + 0.04, 0.07, 0.16);
+    this.playTone(ctx, output, 1567.98, 'triangle', now + 0.08, 0.09, 0.17);
+    this.playTone(ctx, output, 2093.0, 'sine', now + 0.12, 0.15, 0.15);
+  }
+
   private playTone(
     ctx: AudioContext,
     output: GainNode,

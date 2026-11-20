@@ -7,6 +7,7 @@ export const AUDIO_CONFIG = {
   // Prevent digital clipping by keeping combined gain comfortably below 1.0
   maxSfxGain: 0.7,
   maxMusicGain: 0.42,
+  maxAmbientGain: 0.16,
   fadeSeconds: 0.14,
   musicStepMs: 240,
   // Cheerful, relaxing original arcade melody (frequencies in Hz, 0 = rest)

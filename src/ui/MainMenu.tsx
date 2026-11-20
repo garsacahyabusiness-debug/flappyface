@@ -3,6 +3,7 @@ import {
   Award,
   BarChart3,
   Camera,
+  Compass,
   Crown,
   Info,
   Play,
@@ -13,7 +14,11 @@ import {
   Users,
 } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
+import { getCharacterById, RARITY_META } from '../game/character/CharacterRegistry';
+import { SkinId } from '../game/character/CharacterSkinManager';
+import { getWorldById, WorldId } from '../game/worlds/WorldRegistry';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
+import { CurrencyDisplay } from './CurrencyDisplay';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface MainMenuProps {
@@ -21,9 +26,23 @@ interface MainMenuProps {
   unlockedCount: number;
   totalAchievements: number;
   customFaceImg: HTMLImageElement | null;
+  activeCharacterId: string;
+  activeSkinId: SkinId;
+  isCustomFaceActive: boolean;
+  collectionUnlockedCount: number;
+  collectionTotalCount: number;
+  hasLegendTitle: boolean;
+  activeWorldId: WorldId;
+  worldUnlockedCount: number;
+  worldTotalCount: number;
+  hasWorldExplorerBadge: boolean;
+  coins: number;
+  gems: number;
   onPlay: () => void;
   onTwoPlayer: () => void;
   onTournament: () => void;
+  onWorlds: () => void;
+  onCharacters: () => void;
   onLeaderboard: () => void;
   onChangeFace: () => void;
   onAchievements: () => void;
@@ -37,9 +56,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   unlockedCount,
   totalAchievements,
   customFaceImg,
+  activeCharacterId,
+  activeSkinId,
+  isCustomFaceActive,
+  collectionUnlockedCount,
+  collectionTotalCount,
+  hasLegendTitle,
+  activeWorldId,
+  worldUnlockedCount,
+  worldTotalCount,
+  hasWorldExplorerBadge,
+  coins,
+  gems,
   onPlay,
   onTwoPlayer,
   onTournament,
+  onWorlds,
+  onCharacters,
   onLeaderboard,
   onChangeFace,
   onAchievements,
@@ -47,6 +80,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onSettings,
   onAbout,
 }) => {
+  const activeChar = getCharacterById(activeCharacterId);
+  const rarity = RARITY_META[activeChar.rarity];
+  const activeWorld = getWorldById(activeWorldId);
+
   return (
     <div className="anim-fade-in relative z-20 flex h-full w-full flex-col justify-between overflow-y-auto px-4 pt-safe pb-safe sm:px-5">
       {/* Top: Decorated Playful Logo & Best Score */}
@@ -70,7 +107,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             className="anim-sparkle absolute -top-2 -right-7 h-6 w-6 text-[#FFD84D] drop-shadow-[0_2px_0_#24415C]"
           />
 
-          <h1 className="font-display text-stroke-logo text-[2.15rem] leading-[0.94] font-bold tracking-wide text-white sm:text-[2.65rem]">
+          <h1 className="font-display text-stroke-logo text-[2.15rem] leading-[0.94] font-bold tracking-wide text-white sm:text-[2.55rem]">
             FLAPPY
             <span className="mt-0.5 block text-[#FFD84D]">FACE</span>
           </h1>
@@ -80,24 +117,73 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           One tap. Endless chaos.
         </p>
 
-        <div className="mt-1.5 inline-flex items-center gap-2 rounded-2xl border-2 border-[#24415C] bg-white/92 px-3.5 py-0.5 shadow-[0_3px_0_#24415C]">
-          <Trophy className="h-3.5 w-3.5 shrink-0 text-[#F59E0B]" />
-          <span className="text-[10px] font-black tracking-wider text-[#24415C]/70 uppercase">
-            Best
-          </span>
-          <span className="font-display text-base font-bold tabular-nums text-[#24415C]">
-            {bestScore}
-          </span>
+        <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
+          <div className="inline-flex items-center gap-2 rounded-2xl border-2 border-[#24415C] bg-white/92 px-3.5 py-0.5 shadow-[0_3px_0_#24415C]">
+            <Trophy className="h-3.5 w-3.5 shrink-0 text-[#F59E0B]" />
+            <span className="text-[10px] font-black tracking-wider text-[#24415C]/70 uppercase">
+              Best
+            </span>
+            <span className="font-display text-base font-bold tabular-nums text-[#24415C]">
+              {bestScore}
+            </span>
+          </div>
+
+          <CurrencyDisplay coins={coins} gems={gems} compact />
+
+          {hasLegendTitle && (
+            <div className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-gradient-to-r from-[#FFD84D] to-[#F472B6] px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]">
+              <Crown className="h-3 w-3" />
+              <span>LEGEND FACE</span>
+            </div>
+          )}
+
+          {hasWorldExplorerBadge && (
+            <div className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-gradient-to-r from-[#38BDF8] to-[#61D66B] px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]">
+              <Compass className="h-3 w-3" />
+              <span>WORLD EXPLORER</span>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Center: Animated Character Showcase (Custom Face or Default Bird) */}
-      <div className="flex min-h-[76px] flex-1 items-center justify-center overflow-hidden py-0.5">
-        <CharacterShowcaseCanvas customFaceImg={customFaceImg} size={118} />
+      {/* Center: Animated Character Showcase & Active World Selector Chip */}
+      <div className="flex min-h-[78px] flex-1 flex-col items-center justify-center overflow-hidden py-0.5">
+        <CharacterShowcaseCanvas
+          customFaceImg={isCustomFaceActive ? customFaceImg : null}
+          characterId={activeCharacterId}
+          skinId={activeSkinId}
+          rarity={isCustomFaceActive ? undefined : activeChar.rarity}
+          size={104}
+          animate={true}
+        />
+        <span
+          className={`mt-0.5 inline-flex items-center rounded-full border border-[#24415C] px-2 py-0.5 text-[9px] font-black tracking-wider uppercase shadow-[0_1px_0_#24415C] ${
+            isCustomFaceActive
+              ? 'bg-[#3998F7] text-white'
+              : `${rarity.badgeBg} ${rarity.badgeText}`
+          }`}
+        >
+          {isCustomFaceActive ? 'CUSTOM FACE' : activeChar.name}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => {
+            audioManager.playButton();
+            onWorlds();
+          }}
+          className="btn-base btn-secondary mt-1.5 min-h-[30px] rounded-full px-3 py-0.5 text-[10px]"
+        >
+          <Compass className="h-3.5 w-3.5 shrink-0 text-[#3998F7]" />
+          <span>WORLD: {activeWorld.name}</span>
+          <span className="rounded-md bg-[#FFD84D] px-1.5 py-0.5 text-[9px] font-black text-[#24415C]">
+            {worldUnlockedCount}/{worldTotalCount}
+          </span>
+        </button>
       </div>
 
       {/* Bottom: Mode Selection & Secondary Arcade Buttons */}
-      <footer className="mx-auto flex w-full max-w-[330px] shrink-0 flex-col gap-1.5 pb-1">
+      <footer className="mx-auto flex w-full max-w-[334px] shrink-0 flex-col gap-1.5 pb-1">
         {/* Primary Play Modes */}
         <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
           <button
@@ -106,7 +192,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               audioManager.playButton();
               onPlay();
             }}
-            className="btn-base btn-primary min-h-[48px] px-2.5 py-1.5 text-sm tracking-wide sm:min-h-[52px] sm:text-base"
+            className="btn-base btn-primary min-h-[46px] px-2.5 py-1.5 text-sm tracking-wide sm:min-h-[50px] sm:text-base"
           >
             <Play className="h-4 w-4 shrink-0 fill-[#24415C] text-[#24415C] sm:h-5 sm:w-5" />
             <span>1 PLAYER</span>
@@ -118,14 +204,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               audioManager.playButton();
               onTwoPlayer();
             }}
-            className="btn-base btn-blue min-h-[48px] px-2.5 py-1.5 text-sm tracking-wide sm:min-h-[52px] sm:text-base"
+            className="btn-base btn-blue min-h-[46px] px-2.5 py-1.5 text-sm tracking-wide sm:min-h-[50px] sm:text-base"
           >
             <Users className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" />
             <span>2 PLAYER</span>
           </button>
         </div>
 
-        {/* Tournament & Custom Face */}
+        {/* Tournament & Character Collection */}
         <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
           <button
             type="button"
@@ -133,7 +219,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               audioManager.playButton();
               onTournament();
             }}
-            className="btn-base btn-green min-h-[42px] px-2.5 py-1.5 text-xs tracking-wide sm:min-h-[44px] sm:text-sm"
+            className="btn-base btn-green min-h-[42px] px-2 py-1.5 text-xs tracking-wide sm:min-h-[44px] sm:text-sm"
           >
             <Swords className="h-4 w-4 shrink-0" />
             <span>TOURNAMENT</span>
@@ -143,27 +229,42 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             type="button"
             onClick={() => {
               audioManager.playButton();
-              onChangeFace();
+              onCharacters();
             }}
-            className="btn-base btn-secondary min-h-[42px] px-2.5 py-1.5 text-xs sm:min-h-[44px] sm:text-sm"
+            className="btn-base btn-secondary min-h-[42px] px-2 py-1.5 text-xs sm:min-h-[44px] sm:text-sm"
           >
-            <Camera className="h-4 w-4 shrink-0 text-[#3998F7]" />
-            <span>CUSTOM FACE</span>
+            <Sparkles className="h-4 w-4 shrink-0 text-[#9333EA]" />
+            <span className="truncate">CHARACTERS</span>
+            <span className="shrink-0 rounded-lg bg-[#FFD84D] px-1 py-0.5 text-[10px] font-black text-[#24415C]">
+              {collectionUnlockedCount}/{collectionTotalCount}
+            </span>
           </button>
         </div>
 
-        {/* Leaderboard & Achievements */}
-        <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+        {/* Custom Face, Leaderboard & Achievements */}
+        <div className="grid grid-cols-3 gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              audioManager.playButton();
+              onChangeFace();
+            }}
+            className="btn-base btn-secondary min-h-[38px] px-1.5 py-1 text-[10px] sm:text-[11px]"
+          >
+            <Camera className="h-3.5 w-3.5 shrink-0 text-[#3998F7]" />
+            <span className="truncate">FACE</span>
+          </button>
+
           <button
             type="button"
             onClick={() => {
               audioManager.playButton();
               onLeaderboard();
             }}
-            className="btn-base btn-secondary min-h-[40px] px-2 py-1 text-[11px] sm:text-xs"
+            className="btn-base btn-secondary min-h-[38px] px-1.5 py-1 text-[10px] sm:text-[11px]"
           >
-            <Crown className="h-3.5 w-3.5 shrink-0 text-[#F59E0B] sm:h-4 sm:w-4" />
-            <span className="truncate">LEADERBOARD</span>
+            <Crown className="h-3.5 w-3.5 shrink-0 text-[#F59E0B]" />
+            <span className="truncate">RANK</span>
           </button>
 
           <button
@@ -172,18 +273,17 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               audioManager.playButton();
               onAchievements();
             }}
-            className="btn-base btn-secondary min-h-[40px] px-1.5 py-1 text-[11px] sm:px-2 sm:text-xs"
+            className="btn-base btn-secondary min-h-[38px] px-1.5 py-1 text-[10px] sm:text-[11px]"
           >
-            <Award className="h-3.5 w-3.5 shrink-0 text-[#F59E0B] sm:h-4 sm:w-4" />
-            <span className="truncate">ACHIEVEMENTS</span>
-            <span className="shrink-0 rounded-lg bg-[#FFD84D] px-1 py-0.5 text-[10px] font-black text-[#24415C]">
+            <Award className="h-3.5 w-3.5 shrink-0 text-[#F59E0B]" />
+            <span className="rounded bg-[#FFD84D] px-1 text-[9px] font-black text-[#24415C]">
               {unlockedCount}/{totalAchievements}
             </span>
           </button>
         </div>
 
         {/* Statistics, Settings, About */}
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           <button
             type="button"
             onClick={() => {

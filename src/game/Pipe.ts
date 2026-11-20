@@ -1,4 +1,5 @@
 import { GAME_CONFIG, PipeTheme } from './Config';
+import { WorldPipeSkin } from './worlds/WorldRegistry';
 
 export interface Rect {
   x: number;
@@ -13,6 +14,7 @@ interface PipePalette {
   main: string;
   dark: string;
   rim: string;
+  outline?: string;
 }
 
 const PIPE_PALETTES: Record<PipeTheme, PipePalette> = {
@@ -46,6 +48,65 @@ const PIPE_PALETTES: Record<PipeTheme, PipePalette> = {
   },
 };
 
+const WORLD_PIPE_PALETTES: Record<Exclude<WorldPipeSkin, 'classic_green'>, PipePalette> = {
+  candy_cane: {
+    light: '#FF9CD0',
+    highlight: '#FFF5FA',
+    main: '#FF6FB7',
+    dark: '#E84A98',
+    rim: '#C02678',
+    outline: '#4A1D42',
+  },
+  ice_snow: {
+    light: '#C8EDFF',
+    highlight: '#FFFFFF',
+    main: '#7CD3FC',
+    dark: '#38A3DB',
+    rim: '#1E74A8',
+    outline: '#1E3A5F',
+  },
+  bamboo: {
+    light: '#B5E86D',
+    highlight: '#E3FAAD',
+    main: '#84CC3D',
+    dark: '#579E1E',
+    rim: '#3D7311',
+    outline: '#24415C',
+  },
+  lava_stone: {
+    light: '#64484B',
+    highlight: '#8A6266',
+    main: '#422B2E',
+    dark: '#28171A',
+    rim: '#1A0C0F',
+    outline: '#12070A',
+  },
+  cyber_neon: {
+    light: '#334155',
+    highlight: '#475569',
+    main: '#1E293B',
+    dark: '#0F172A',
+    rim: '#090F1E',
+    outline: '#22D3EE',
+  },
+  sky_gold: {
+    light: '#FFFBEB',
+    highlight: '#FFFFFF',
+    main: '#F1F5F9',
+    dark: '#CBD5E1',
+    rim: '#F59E0B',
+    outline: '#334155',
+  },
+  space_metal: {
+    light: '#94A3B8',
+    highlight: '#E2E8F0',
+    main: '#64748B',
+    dark: '#334155',
+    rim: '#1E293B',
+    outline: '#0B1120',
+  },
+};
+
 let nextPipeId = 1;
 
 export class Pipe {
@@ -55,13 +116,15 @@ export class Pipe {
   public readonly gapY: number;
   public readonly gapHeight: number;
   public readonly theme: PipeTheme;
+  public pipeSkin: WorldPipeSkin;
   public passed: boolean;
 
   constructor(
     x: number,
     gapY: number,
     gapHeight: number = GAME_CONFIG.pipes.gap,
-    theme: PipeTheme = 'green'
+    theme: PipeTheme = 'green',
+    pipeSkin: WorldPipeSkin = 'classic_green'
   ) {
     this.id = nextPipeId++;
     this.x = x;
@@ -69,6 +132,7 @@ export class Pipe {
     this.gapY = gapY;
     this.gapHeight = gapHeight;
     this.theme = theme;
+    this.pipeSkin = pipeSkin;
     this.passed = false;
   }
 
@@ -80,6 +144,7 @@ export class Pipe {
     return this.x + this.width + GAME_CONFIG.pipes.capOverhang < -10;
   }
 
+  // Strictly invariant collision geometry across every world pipe skin
   public getCollisionRects(groundY: number): Rect[] {
     const { capHeight, capOverhang } = GAME_CONFIG.pipes;
     const topBottom = this.gapY - this.gapHeight / 2;
@@ -124,8 +189,11 @@ export class Pipe {
     side: 'top' | 'bottom'
   ): void {
     const { capHeight, capOverhang } = GAME_CONFIG.pipes;
-    const { darkOutline } = GAME_CONFIG.colors;
-    const palette = PIPE_PALETTES[this.theme];
+    const palette =
+      this.pipeSkin === 'classic_green'
+        ? PIPE_PALETTES[this.theme]
+        : WORLD_PIPE_PALETTES[this.pipeSkin];
+    const strokeOutline = palette.outline ?? GAME_CONFIG.colors.darkOutline;
     const capW = this.width + capOverhang * 2;
     const capX = this.x - capOverhang;
     const capY = side === 'top' ? y + height - capHeight : y;
@@ -133,7 +201,7 @@ export class Pipe {
     ctx.save();
 
     // Soft drop shadow
-    ctx.fillStyle = 'rgba(36, 65, 92, 0.16)';
+    ctx.fillStyle = 'rgba(20, 32, 48, 0.2)';
     ctx.beginPath();
     ctx.roundRect(this.x + 6, y, this.width, height, 6);
     ctx.fill();
@@ -147,20 +215,23 @@ export class Pipe {
     shaftGrad.addColorStop(1, palette.rim);
 
     ctx.fillStyle = shaftGrad;
-    ctx.strokeStyle = darkOutline;
+    ctx.strokeStyle = strokeOutline;
     ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.rect(this.x, y, this.width, height);
     ctx.fill();
     ctx.stroke();
 
+    // Biome-specific shaft ornaments (purely cosmetic, strictly inside shaft)
+    this.drawShaftSkinDetail(ctx, y, height);
+
     // Vertical glossy specular stripes
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
     ctx.fillRect(this.x + 9, y, 7, height);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
     ctx.fillRect(this.x + 19, y, 3, height);
 
-    // Pipe cap with rounded corners & 3D shading
+    // Pipe cap
     const capGrad = ctx.createLinearGradient(capX, 0, capX + capW, 0);
     capGrad.addColorStop(0, palette.light);
     capGrad.addColorStop(0.22, palette.highlight);
@@ -169,25 +240,17 @@ export class Pipe {
     capGrad.addColorStop(1, palette.rim);
 
     ctx.fillStyle = capGrad;
+    ctx.strokeStyle = strokeOutline;
     ctx.beginPath();
     ctx.roundRect(capX, capY, capW, capHeight, 9);
     ctx.fill();
     ctx.stroke();
 
-    // Inner lip bevel & highlight
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-    ctx.beginPath();
-    ctx.roundRect(capX + 10, capY + 4, 10, capHeight - 8, 4);
-    ctx.fill();
-
-    // Decorative rivets on pipe cap corners
-    ctx.fillStyle = palette.rim;
-    ctx.beginPath();
-    ctx.arc(capX + capW - 10, capY + capHeight / 2, 2.3, 0, Math.PI * 2);
-    ctx.fill();
+    // Cap skin accents
+    this.drawCapSkinDetail(ctx, capX, capY, capW, capHeight, side, palette);
 
     // Inner neck shadow beneath cap
-    ctx.fillStyle = 'rgba(36, 65, 92, 0.18)';
+    ctx.fillStyle = 'rgba(20, 32, 48, 0.22)';
     if (side === 'bottom') {
       ctx.fillRect(this.x + 2, capY + capHeight + 1.5, this.width - 4, 6);
     } else {
@@ -195,5 +258,126 @@ export class Pipe {
     }
 
     ctx.restore();
+  }
+
+  private drawShaftSkinDetail(ctx: CanvasRenderingContext2D, y: number, height: number): void {
+    if (this.pipeSkin === 'candy_cane') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(this.x + 2, y, this.width - 4, height);
+      ctx.clip();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+      for (let sy = y - 24; sy < y + height + 24; sy += 28) {
+        ctx.beginPath();
+        ctx.moveTo(this.x, sy);
+        ctx.lineTo(this.x + this.width, sy + 16);
+        ctx.lineTo(this.x + this.width, sy + 27);
+        ctx.lineTo(this.x, sy + 11);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    } else if (this.pipeSkin === 'bamboo') {
+      ctx.fillStyle = '#3D7311';
+      for (let sy = y + 36; sy < y + height - 28; sy += 46) {
+        ctx.fillRect(this.x + 2, sy, this.width - 4, 4);
+        ctx.fillStyle = 'rgba(227, 250, 173, 0.55)';
+        ctx.fillRect(this.x + 2, sy - 2, this.width - 4, 2);
+        ctx.fillStyle = '#3D7311';
+      }
+    } else if (this.pipeSkin === 'lava_stone') {
+      ctx.strokeStyle = '#FB923C';
+      ctx.lineWidth = 2.4;
+      for (let sy = y + 26; sy < y + height - 24; sy += 48) {
+        ctx.beginPath();
+        ctx.moveTo(this.x + 10, sy);
+        ctx.lineTo(this.x + 28, sy + 10);
+        ctx.lineTo(this.x + 48, sy + 4);
+        ctx.stroke();
+      }
+    } else if (this.pipeSkin === 'cyber_neon') {
+      ctx.fillStyle = '#EC4899';
+      ctx.fillRect(this.x + this.width - 10, y + 4, 3, Math.max(0, height - 8));
+      ctx.fillStyle = '#22D3EE';
+      ctx.fillRect(this.x + 7, y + 4, 2.5, Math.max(0, height - 8));
+    } else if (this.pipeSkin === 'sky_gold') {
+      ctx.fillStyle = '#F59E0B';
+      ctx.fillRect(this.x + this.width - 8, y, 4, height);
+    } else if (this.pipeSkin === 'space_metal') {
+      ctx.strokeStyle = '#1E293B';
+      ctx.lineWidth = 2;
+      for (let sy = y + 38; sy < y + height - 26; sy += 52) {
+        ctx.beginPath();
+        ctx.moveTo(this.x + 2, sy);
+        ctx.lineTo(this.x + this.width - 2, sy);
+        ctx.stroke();
+        ctx.fillStyle = '#38BDF8';
+        ctx.fillRect(this.x + this.width - 14, sy - 7, 5, 3);
+      }
+    }
+  }
+
+  private drawCapSkinDetail(
+    ctx: CanvasRenderingContext2D,
+    capX: number,
+    capY: number,
+    capW: number,
+    capHeight: number,
+    side: 'top' | 'bottom',
+    palette: PipePalette
+  ): void {
+    // Glossy inner bevel
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.beginPath();
+    ctx.roundRect(capX + 10, capY + 4, 10, capHeight - 8, 4);
+    ctx.fill();
+
+    if (this.pipeSkin === 'ice_snow') {
+      ctx.fillStyle = '#FFFFFF';
+      const frostY = side === 'bottom' ? capY + 1.5 : capY + capHeight - 8;
+      ctx.beginPath();
+      ctx.roundRect(capX + 3, frostY, capW - 6, 6.5, 3);
+      ctx.fill();
+      return;
+    }
+
+    if (this.pipeSkin === 'lava_stone') {
+      ctx.fillStyle = '#FB923C';
+      ctx.beginPath();
+      ctx.roundRect(capX + 12, capY + capHeight / 2 - 2, capW - 24, 4, 2);
+      ctx.fill();
+      return;
+    }
+
+    if (this.pipeSkin === 'cyber_neon') {
+      ctx.fillStyle = '#EC4899';
+      ctx.beginPath();
+      ctx.roundRect(capX + 12, capY + capHeight / 2 - 2, capW - 24, 4, 2);
+      ctx.fill();
+      return;
+    }
+
+    if (this.pipeSkin === 'sky_gold') {
+      ctx.fillStyle = '#FCD34D';
+      ctx.beginPath();
+      ctx.roundRect(capX + 4, capY + capHeight - 7, capW - 8, 4.5, 2);
+      ctx.fill();
+      return;
+    }
+
+    if (this.pipeSkin === 'space_metal') {
+      ctx.fillStyle = '#38BDF8';
+      ctx.beginPath();
+      ctx.arc(capX + capW - 11, capY + capHeight / 2, 2.8, 0, Math.PI * 2);
+      ctx.arc(capX + 11, capY + capHeight / 2, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    // Default / candy / bamboo corner rivet
+    ctx.fillStyle = palette.rim;
+    ctx.beginPath();
+    ctx.arc(capX + capW - 10, capY + capHeight / 2, 2.3, 0, Math.PI * 2);
+    ctx.fill();
   }
 }

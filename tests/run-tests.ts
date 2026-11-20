@@ -94,6 +94,8 @@ function createMockCtx(): CanvasRenderingContext2D {
     ellipse: noop,
     rect: noop,
     roundRect: noop,
+    quadraticCurveTo: noop,
+    bezierCurveTo: noop,
     clip: noop,
     fill: noop,
     stroke: noop,
@@ -154,7 +156,26 @@ async function runTests(): Promise<void> {
     { AchievementManager },
     { GalleryController },
     { CharacterStorage },
+    { CHARACTER_REGISTRY, RARITY_ORDER },
+    { CharacterUnlockManager, characterUnlockManager },
+    { CharacterSkinManager, SKIN_REGISTRY, characterSkinManager },
+    { CharacterFavorites },
+    { CharacterRandomizer },
+    { CharacterRenderer },
+    { Ground },
+    { SettingsManager },
+    { WORLD_REGISTRY },
+    { WorldUnlockManager, worldUnlockManager },
+    { EnvironmentRenderer },
+    { WeatherSystem },
+    { SkySystem },
     { Game },
+    { POWER_UP_REGISTRY, COLLECTIBLE_REGISTRY },
+    { CurrencyManager },
+    { PowerUpEffectManager },
+    { CollectibleManager },
+    { PowerUpSpawnManager },
+    { PowerUpManager },
   ] = await Promise.all([
     import('../src/game/Config'),
     import('../src/game/Physics'),
@@ -169,7 +190,26 @@ async function runTests(): Promise<void> {
     import('../src/game/progression/AchievementManager'),
     import('../src/game/character/GalleryController'),
     import('../src/game/character/CharacterStorage'),
+    import('../src/game/character/CharacterRegistry'),
+    import('../src/game/character/CharacterUnlockManager'),
+    import('../src/game/character/CharacterSkinManager'),
+    import('../src/game/character/CharacterFavorites'),
+    import('../src/game/character/CharacterRandomizer'),
+    import('../src/game/character/CharacterRenderer'),
+    import('../src/game/Ground'),
+    import('../src/game/settings/SettingsManager'),
+    import('../src/game/worlds/WorldRegistry'),
+    import('../src/game/worlds/WorldUnlockManager'),
+    import('../src/game/worlds/EnvironmentRenderer'),
+    import('../src/game/worlds/WeatherSystem'),
+    import('../src/game/worlds/SkySystem'),
     import('../src/game/Game'),
+    import('../src/game/powerups/PowerUpRegistry'),
+    import('../src/game/powerups/CurrencyManager'),
+    import('../src/game/powerups/PowerUpEffectManager'),
+    import('../src/game/powerups/CollectibleManager'),
+    import('../src/game/powerups/PowerUpSpawnManager'),
+    import('../src/game/powerups/PowerUpManager'),
   ]);
 
   let passed = 0;
@@ -577,6 +617,732 @@ async function runTests(): Promise<void> {
     assert.equal(getMatch()?.player1Wins, 0);
 
     game.destroy();
+  });
+
+  // 12. Character Registry & Rendering (All 15 characters + 6 rarities + 9 skins)
+  await runCase('CharacterRegistry contains >=15 unique characters across all 6 rarities and renders safely', () => {
+    assert.ok(CHARACTER_REGISTRY.length >= 15);
+    const ids = new Set(CHARACTER_REGISTRY.map((c) => c.id));
+    assert.equal(ids.size, CHARACTER_REGISTRY.length, 'Character IDs must be unique');
+    for (const r of RARITY_ORDER) {
+      assert.ok(
+        CHARACTER_REGISTRY.some((c) => c.rarity === r),
+        `Missing rarity ${r}`
+      );
+    }
+
+    const ctx = createMockCtx();
+    for (const char of CHARACTER_REGISTRY) {
+      for (const skin of SKIN_REGISTRY) {
+        CharacterRenderer.draw(ctx, {
+          x: 100,
+          y: 200,
+          visualRadius: GAME_CONFIG.player.visualRadius,
+          rotation: 0,
+          wingPhase: 0.5,
+          flapPulse: 0.3,
+          isDead: false,
+          isBlinking: false,
+          customFaceImage: null,
+          characterId: char.id,
+          skinId: skin.id,
+          animTime: 1.2,
+        });
+      }
+      CharacterRenderer.draw(ctx, {
+        x: 100,
+        y: 200,
+        visualRadius: GAME_CONFIG.player.visualRadius,
+        rotation: 0,
+        wingPhase: 0.5,
+        flapPulse: 0,
+        isDead: false,
+        isBlinking: false,
+        customFaceImage: null,
+        characterId: char.id,
+        lockedSilhouette: true,
+      });
+    }
+  });
+
+  // 13. CharacterUnlockManager, Progression, Milestones, Locked Guard & Non-Duplicate Guarantee
+  await runCase('CharacterUnlockManager enforces unlock conditions, prevents duplicates, persists, and unlocks milestones', () => {
+    storage.clear();
+    const um = new CharacterUnlockManager();
+
+    // Starter characters available immediately
+    assert.equal(um.isUnlocked('classic_bird'), true);
+    assert.equal(um.isUnlocked('chicky'), true);
+    assert.equal(um.isUnlocked('golden_bird'), false);
+
+    // Locked character cannot be equipped
+    assert.equal(um.selectGameCharacter('golden_bird', 'default'), false);
+    assert.equal(um.getSelection('default').characterId, 'classic_bird');
+
+    // Progress bars match real metrics
+    const goldenDef = CHARACTER_REGISTRY.find((c) => c.id === 'golden_bird')!;
+    const prog32 = um.getProgressForCharacter(goldenDef, {
+      bestScore: 32,
+      totalGamesPlayed: 5,
+      tournamentsWon: 0,
+      bestWinStreak: 0,
+      unlockedAchievements: 3,
+      totalAchievements: 6,
+    });
+    assert.equal(prog32.current, 32);
+    assert.equal(prog32.target, 50);
+    assert.equal(prog32.percent, 64);
+
+    // Unlock score-based, games-based, tournament-based, streak-based, achievement-based
+    const newly1 = um.evaluateProgress({
+      bestScore: 50,
+      totalGamesPlayed: 10,
+      tournamentsWon: 3,
+      bestWinStreak: 0,
+      unlockedAchievements: 4,
+      totalAchievements: 6,
+    });
+    const newly1Ids = new Set(newly1.map((c) => c.id));
+    assert.equal(newly1Ids.has('toxic_bird'), true);
+    assert.equal(newly1Ids.has('pinky'), true);
+    assert.equal(newly1Ids.has('panda_fly'), true);
+    assert.equal(newly1Ids.has('space_duck'), true);
+    assert.equal(newly1Ids.has('ninja_bird'), true);
+    assert.equal(newly1Ids.has('golden_bird'), true);
+
+    // Repeating same metrics must NOT emit duplicate unlocks
+    const dup = um.evaluateProgress({
+      bestScore: 50,
+      totalGamesPlayed: 10,
+      tournamentsWon: 3,
+      bestWinStreak: 0,
+      unlockedAchievements: 4,
+      totalAchievements: 6,
+    });
+    assert.equal(dup.length, 0);
+
+    // Equip unlocked character & verify persistence across re-instantiation (simulated refresh)
+    assert.equal(um.selectGameCharacter('golden_bird', 'default'), true);
+    const reloaded = new CharacterUnlockManager();
+    assert.equal(reloaded.isUnlocked('golden_bird'), true);
+    assert.equal(reloaded.getSelection('default').characterId, 'golden_bird');
+
+    // Full 100% completion unlocks LEGEND FACE + milestones (25, 50, 75, 100%)
+    reloaded.evaluateProgress({
+      bestScore: 150,
+      totalGamesPlayed: 30,
+      tournamentsWon: 10,
+      bestWinStreak: 5,
+      unlockedAchievements: 6,
+      totalAchievements: 6,
+    });
+    const fullSummary = reloaded.getCollectionSummary();
+    assert.equal(fullSummary.unlockedCount, fullSummary.totalCount);
+    assert.equal(fullSummary.percent, 100);
+    assert.equal(fullSummary.hasSpecialBackground, true);
+    assert.equal(fullSummary.hasLegendTitle, true);
+    assert.ok(fullSummary.milestones.every((m) => m.unlocked));
+  });
+
+  // 14. Skins, Favorites, Randomizer, Custom Face Preservation & 2P Slot Isolation
+  await runCase('Skins, Favorites, Randomizer, Custom Face non-overwrite, and P1/P2 isolation work properly', async () => {
+    storage.clear();
+    const sm = new CharacterSkinManager();
+    assert.equal(sm.selectSkin('golden', 'default'), false, 'Locked skin cannot be selected');
+    sm.evaluateUnlocks({ bestScore: 40, totalGamesPlayed: 20, collectionPercent: 50 });
+    assert.equal(sm.isUnlocked('neon'), true);
+    assert.equal(sm.isUnlocked('retro_pixel'), true);
+    assert.equal(sm.isUnlocked('shadow'), true);
+    assert.equal(sm.isUnlocked('halloween'), true);
+    assert.equal(sm.isUnlocked('golden'), true);
+    assert.equal(sm.isUnlocked('christmas'), true);
+
+    // P1 & P2 skin isolation
+    assert.equal(sm.selectSkin('neon', 'player1'), true);
+    assert.equal(sm.selectSkin('halloween', 'player2'), true);
+    assert.equal(sm.getSelectedSkin('player1'), 'neon');
+    assert.equal(sm.getSelectedSkin('player2'), 'halloween');
+    const smReloaded = new CharacterSkinManager();
+    assert.equal(smReloaded.getSelectedSkin('player1'), 'neon');
+    assert.equal(smReloaded.getSelectedSkin('player2'), 'halloween');
+
+    // Favorites persistence & isolation
+    const favs = new CharacterFavorites();
+    assert.equal(favs.toggleFavorite('chicky', 'default'), true);
+    assert.equal(favs.isFavorite('chicky', 'default'), true);
+    assert.equal(favs.isFavorite('chicky', 'player2'), false);
+    assert.equal(new CharacterFavorites().isFavorite('chicky', 'default'), true);
+
+    // Randomizer never selects locked, avoids immediate duplicate, respects custom face option
+    for (let i = 0; i < 10; i++) {
+      const pick = CharacterRandomizer.pickRandom({
+        unlockedCharacterIds: ['classic_bird', 'chicky', 'toxic_bird'],
+        currentCharacterId: 'classic_bird',
+        currentIsCustomFace: false,
+        hasCustomFace: true,
+        includeCustomFace: false,
+      });
+      assert.equal(pick.kind, 'character');
+      if (pick.kind === 'character') {
+        assert.notEqual(pick.characterId, 'classic_bird');
+      }
+    }
+
+    // Custom Face storage preserved even when switching back to a game character
+    await CharacterStorage.saveCharacter('data:image/png;base64,MYFACE', 'gallery', 'default');
+    const um = new CharacterUnlockManager();
+    um.selectCustomFaceMode('default');
+    assert.equal(um.getSelection('default').mode, 'custom_face');
+    um.selectGameCharacter('chicky', 'default');
+    assert.equal(um.getSelection('default').mode, 'character');
+    const savedFace = await CharacterStorage.loadCharacter('default');
+    assert.equal(savedFace?.imageDataUrl, 'data:image/png;base64,MYFACE');
+    await CharacterStorage.removeCharacter('default');
+
+    // P1 & P2 active visual isolation in Game turn transitions
+    storage.clear();
+    characterUnlockManager.reset();
+    characterSkinManager.reset();
+    characterUnlockManager.evaluateProgress({
+      bestScore: 60,
+      totalGamesPlayed: 20,
+      tournamentsWon: 5,
+      bestWinStreak: 0,
+      unlockedAchievements: 4,
+      totalAchievements: 6,
+    });
+    characterUnlockManager.selectGameCharacter('ninja_bird', 'player1');
+    characterUnlockManager.selectGameCharacter('golden_bird', 'player2');
+    characterSkinManager.selectSkin('neon', 'player1');
+    characterSkinManager.selectSkin('golden', 'player2');
+
+    const uiStates: import('../src/game/Game').GameUIState[] = [];
+    const game = new Game(createMockCanvas(), (ui) => uiStates.push(ui));
+    game.startTwoPlayerMatch('P1', 'P2', 'bo3');
+    let latest = uiStates[uiStates.length - 1];
+    assert.equal(latest.activeCharacterId, 'ninja_bird');
+    assert.equal(latest.activeSkinId, 'neon');
+
+    (game as unknown as { score: { current: number } }).score.current = 3;
+    (game as unknown as { twoPlayerMatch: { player1Score: number | null } }).twoPlayerMatch.player1Score = 3;
+    (game as unknown as { state: string }).state = 'PLAYER_1_GAME_OVER';
+    game.continueFromPlayer1GameOver();
+    game.startPlayer2Turn();
+    latest = uiStates[uiStates.length - 1];
+    assert.equal(latest.activeCharacterId, 'golden_bird');
+    assert.equal(latest.activeSkinId, 'golden');
+    game.destroy();
+  });
+
+  // 15. World Registry & Multi-Layer Biome + Weather Rendering
+  await runCase('WorldRegistry defines 8 unique worlds and EnvironmentRenderer/Ground render all biomes and weathers safely', () => {
+    assert.equal(WORLD_REGISTRY.length, 8);
+    const ids = new Set(WORLD_REGISTRY.map((w) => w.id));
+    const skins = new Set(WORLD_REGISTRY.map((w) => w.pipeSkin));
+    assert.equal(ids.size, 8);
+    assert.equal(skins.size, 8);
+
+    const ctx = createMockCtx();
+    const env = new EnvironmentRenderer();
+    const ground = new Ground();
+    for (const world of WORLD_REGISTRY) {
+      env.setWorld(world.id);
+      ground.setWorldTheme(world.id);
+      for (const weather of world.compatibleWeathers) {
+        env.setWeather(weather);
+        env.update(0.016, 1, true);
+        ground.update(0.016, 1);
+        env.drawBackgroundLayers(ctx);
+        env.drawWeatherOverlay(ctx);
+        ground.draw(ctx);
+      }
+    }
+  });
+
+  // 16. Pipe Skin Hitbox Invariance (Strictly Cosmetic)
+  await runCase('All 8 WorldPipeSkin styles produce identical Pipe collision hitboxes', () => {
+    const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
+    const basePipe = new Pipe(180, 310, 160, 'green', 'classic_green');
+    const baseRects = basePipe.getCollisionRects(groundY);
+    const ctx = createMockCtx();
+
+    for (const world of WORLD_REGISTRY) {
+      const themedPipe = new Pipe(180, 310, 160, 'green', world.pipeSkin);
+      assert.deepEqual(
+        themedPipe.getCollisionRects(groundY),
+        baseRects,
+        `Collision rects must remain identical for pipeSkin ${world.pipeSkin}`
+      );
+      themedPipe.draw(ctx, groundY);
+    }
+  });
+
+  // 17. WorldUnlockManager Progression, Locked Play Guard, Milestones & Persistence
+  await runCase('WorldUnlockManager enforces conditions, blocks locked gameplay, prevents duplicates, and unlocks milestones', () => {
+    storage.clear();
+    worldUnlockManager.reset();
+    const wm = new WorldUnlockManager();
+
+    assert.equal(wm.isUnlocked('green_valley'), true);
+    assert.equal(wm.isUnlocked('candy_world'), false);
+    assert.equal(wm.selectWorld('lava_world'), false, 'Locked world cannot be selected');
+    assert.equal(wm.getSelectedWorldId(), 'green_valley');
+
+    // Game refuses starting gameplay on locked world
+    const lockedGame = new Game(createMockCanvas(), () => {});
+    assert.equal(lockedGame.startReady('space_odyssey'), false);
+    assert.equal(lockedGame.getState(), 'MAIN_MENU');
+    assert.equal(lockedGame.startTwoPlayerMatch('P1', 'P2', 'quick', 'lava_world'), false);
+    lockedGame.destroy();
+
+    // Progress tracking accuracy
+    const lavaDef = WORLD_REGISTRY.find((w) => w.id === 'lava_world')!;
+    const prog = wm.getProgressForWorld(lavaDef, {
+      bestScore: 25,
+      totalGamesPlayed: 4,
+      tournamentsWon: 0,
+      bestWinStreak: 0,
+      unlockedAchievements: 2,
+      totalAchievements: 6,
+    });
+    assert.equal(prog.current, 25);
+    assert.equal(prog.target, 50);
+    assert.equal(prog.percent, 50);
+
+    // Evaluate unlocks incrementally + non-duplicate guarantee
+    const firstBatch = wm.evaluateProgress({
+      bestScore: 25,
+      totalGamesPlayed: 20,
+      tournamentsWon: 0,
+      bestWinStreak: 0,
+      unlockedAchievements: 4,
+      totalAchievements: 6,
+    });
+    const firstIds = new Set(firstBatch.map((w) => w.id));
+    assert.equal(firstIds.has('candy_world'), true);
+    assert.equal(firstIds.has('snow_land'), true);
+    assert.equal(firstIds.has('tropical_island'), true);
+    assert.equal(firstIds.has('lava_world'), false);
+
+    const dupBatch = wm.evaluateProgress({
+      bestScore: 25,
+      totalGamesPlayed: 20,
+      tournamentsWon: 0,
+      bestWinStreak: 0,
+      unlockedAchievements: 4,
+      totalAchievements: 6,
+    });
+    assert.equal(dupBatch.length, 0, 'Already unlocked worlds must not re-emit');
+
+    // Compatible weather validation
+    assert.equal(wm.setWeatherForWorld('snow_land', 'snow'), true);
+    assert.equal(wm.setWeatherForWorld('snow_land', 'ash' as never), false);
+    assert.equal(wm.selectWorld('snow_land'), true);
+
+    // Persistence across refresh
+    const reloaded = new WorldUnlockManager();
+    assert.equal(reloaded.getSelectedWorldId(), 'snow_land');
+    assert.equal(reloaded.isUnlocked('tropical_island'), true);
+
+    // 8/8 full completion unlocks all milestones + WORLD EXPLORER badge
+    reloaded.evaluateProgress({
+      bestScore: 100,
+      totalGamesPlayed: 30,
+      tournamentsWon: 3,
+      bestWinStreak: 2,
+      unlockedAchievements: 6,
+      totalAchievements: 6,
+    });
+    const full = reloaded.getCollectionSummary();
+    assert.equal(full.unlockedCount, 8);
+    assert.equal(full.percent, 100);
+    assert.equal(full.hasTrailReward, true);
+    assert.equal(full.hasEnvEffectReward, true);
+    assert.equal(full.hasSkinReward, true);
+    assert.equal(full.hasWorldExplorerBadge, true);
+    assert.ok(full.milestones.every((m) => m.unlocked));
+  });
+
+  // 18. SkySystem, WeatherSystem Caps, Settings Persistence & 2P Shared World Consistency
+  await runCase('SkySystem, WeatherSystem particle caps, Environment Settings, and 2P shared world consistency behave properly', () => {
+    storage.clear();
+
+    // Weather caps obey low / medium / high presets
+    const ws = new WeatherSystem();
+    ws.setWeather('rain');
+    ws.setParticleLevel('low');
+    assert.equal(ws.getActiveCount(), 0);
+    ws.setParticleLevel('medium');
+    assert.ok(ws.getActiveCount() > 0 && ws.getActiveCount() <= 24);
+    ws.setParticleLevel('high');
+    assert.ok(ws.getActiveCount() > 24 && ws.getActiveCount() <= 60);
+
+    // SkySystem interpolates Morning -> Day -> Sunset -> Night smoothly
+    const sky = new SkySystem();
+    const valley = WORLD_REGISTRY[0];
+    sky.setCycleTime(24);
+    const daySky = sky.getEffectiveSky(valley, true, false);
+    sky.setCycleTime(75);
+    const nightSky = sky.getEffectiveSky(valley, true, false);
+    assert.notEqual(daySky.top, nightSky.top);
+    assert.ok(nightSky.starOpacity > daySky.starOpacity);
+
+    // Settings persistence
+    const sm = new SettingsManager();
+    sm.update({
+      weatherEnabled: false,
+      dynamicSkyEnabled: true,
+      parallaxEnabled: false,
+      ambientSoundEnabled: false,
+      particleLevel: 'low',
+      graphicsPreset: 'medium',
+    });
+    const reloadedSettings = new SettingsManager().getSettings();
+    assert.equal(reloadedSettings.weatherEnabled, false);
+    assert.equal(reloadedSettings.dynamicSkyEnabled, true);
+    assert.equal(reloadedSettings.parallaxEnabled, false);
+    assert.equal(reloadedSettings.ambientSoundEnabled, false);
+    assert.equal(reloadedSettings.particleLevel, 'low');
+    assert.equal(reloadedSettings.graphicsPreset, 'medium');
+
+    // 2P shared world consistency across P1 & P2 turns
+    worldUnlockManager.reset();
+    worldUnlockManager.evaluateProgress({
+      bestScore: 55,
+      totalGamesPlayed: 25,
+      tournamentsWon: 3,
+      bestWinStreak: 1,
+      unlockedAchievements: 4,
+      totalAchievements: 6,
+    });
+    assert.equal(worldUnlockManager.selectWorld('neon_city'), true);
+
+    const uiStates: import('../src/game/Game').GameUIState[] = [];
+    const game = new Game(createMockCanvas(), (ui) => uiStates.push(ui));
+    assert.equal(game.startTwoPlayerMatch('P1', 'P2', 'bo3'), true);
+    assert.equal(uiStates[uiStates.length - 1].activeWorldId, 'neon_city');
+
+    (game as unknown as { score: { current: number } }).score.current = 4;
+    (game as unknown as { twoPlayerMatch: { player1Score: number | null } }).twoPlayerMatch.player1Score = 4;
+    (game as unknown as { state: string }).state = 'PLAYER_1_GAME_OVER';
+    game.continueFromPlayer1GameOver();
+    game.startPlayer2Turn();
+    assert.equal(
+      uiStates[uiStates.length - 1].activeWorldId,
+      'neon_city',
+      'Player 2 must play in the exact same world as Player 1'
+    );
+    game.destroy();
+  });
+
+  // 19. Shield & Post-Hit Invulnerability
+  await runCase('Shield protects from 1 fatal hit, does not stack, and grants brief post-hit invulnerability', () => {
+    assert.equal(POWER_UP_REGISTRY.length, 6);
+    assert.equal(COLLECTIBLE_REGISTRY.length, 3);
+
+    const pm = new PowerUpManager();
+    const player = new Player();
+    const particles = new (class {
+      spawnFlapPuff() {}
+      spawnCollisionBurst() {}
+    })() as unknown as import('../src/game/ParticleSystem').ParticleSystem;
+    const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
+
+    // Collect Shield once -> active; collecting again does NOT stack
+    assert.notEqual(pm.collectPowerUp('shield', player.x, player.y, particles, false), null);
+    assert.equal(pm.effects.hasShield, true);
+    assert.equal(pm.collectPowerUp('shield', player.x, player.y, particles, false), null);
+
+    // Hit pipe -> Shield saves player + grants invulnerability
+    const hit1 = pm.handleCollision('pipe', player, groundY, particles);
+    assert.equal(hit1.survived, true);
+    assert.equal(hit1.shieldBroken, true);
+    assert.equal(pm.effects.hasShield, false);
+    assert.equal(pm.effects.isInvulnerable(), true);
+
+    // Grace invulnerability protects immediately on subsequent hit
+    const hitGrace = pm.handleCollision('ground', player, groundY, particles);
+    assert.equal(hitGrace.survived, true);
+    assert.equal(hitGrace.shieldBroken, false);
+
+    // After invulnerability expires, hit without shield is fatal
+    pm.effects.update(2.0);
+    assert.equal(pm.effects.isInvulnerable(), false);
+    const hitFatal = pm.handleCollision('pipe', player, groundY, particles);
+    assert.equal(hitFatal.survived, false);
+    assert.equal(hitFatal.offerRevive, false);
+  });
+
+  // 20. Second Chance Revive Flow (Accept, Max 1/Run, Decline & Timeout -> Game Over)
+  await runCase('Second Chance triggers REVIVE_PROMPT, restores safely once per run, and handles Give Up & Timeout', () => {
+    storage.clear();
+    const canvas = createMockCanvas();
+    const game = new Game(canvas, () => {});
+    const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
+
+    // 1. Accept Revive path
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    assert.equal(game.getState(), 'PLAYING');
+    game.powerUps.collectPowerUp('second_chance', 114, 300, undefined, false);
+    assert.equal(game.powerUps.effects.canOfferRevive(), true);
+
+    // Collecting second_chance again does not stack
+    assert.equal(game.powerUps.collectPowerUp('second_chance', 114, 300, undefined, false), null);
+
+    // Simulate ground hit collision -> enters REVIVE_PROMPT
+    (game as unknown as { score: { current: number } }).score.current = 7;
+    (game as unknown as { player: { y: number } }).player.y = groundY + 10;
+    (game as unknown as { update: (dt: number) => void }).update(0.016);
+    assert.equal(game.getState(), 'REVIVE_PROMPT');
+
+    // Accept revive -> restores alive flight, preserves score, consumes revive charge (max 1/run)
+    game.acceptRevive();
+    assert.equal(game.getState(), 'PLAYING');
+    assert.equal((game as unknown as { score: { current: number } }).score.current, 7);
+    assert.equal(game.powerUps.effects.revivedThisRun, true);
+    assert.equal(game.powerUps.effects.hasReviveCharge, false);
+    assert.equal(game.powerUps.effects.isInvulnerable(), true);
+
+    // Cannot get a second revive charge in the same run
+    assert.equal(game.powerUps.collectPowerUp('second_chance', 114, 300, undefined, false), null);
+
+    // Wait out invulnerability then hit ground -> immediate GAME_OVER
+    game.powerUps.effects.update(2.5);
+    (game as unknown as { player: { y: number } }).player.y = groundY + 10;
+    (game as unknown as { update: (dt: number) => void }).update(0.016);
+    assert.equal(game.getState(), 'GAME_OVER');
+
+    // 2. Decline & Timeout paths
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    game.powerUps.collectPowerUp('second_chance', 114, 300, undefined, false);
+    (game as unknown as { player: { y: number } }).player.y = groundY + 10;
+    (game as unknown as { update: (dt: number) => void }).update(0.016);
+    assert.equal(game.getState(), 'REVIVE_PROMPT');
+    game.declineRevive();
+    assert.equal(game.getState(), 'GAME_OVER');
+
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    game.powerUps.collectPowerUp('second_chance', 114, 300, undefined, false);
+    (game as unknown as { player: { y: number } }).player.y = groundY + 10;
+    (game as unknown as { update: (dt: number) => void }).update(0.016);
+    assert.equal(game.getState(), 'REVIVE_PROMPT');
+    for (let i = 0; i < 110; i++) {
+      (game as unknown as { update: (dt: number) => void }).update(0.05);
+    }
+    assert.equal(game.getState(), 'GAME_OVER');
+    game.destroy();
+  });
+
+  // 21. Slow Motion, Score Boost (Non-Stacking x2), and Feather Physics
+  await runCase('Slow Motion, Score Boost x2 (non-stacking), and Feather gravity expire smoothly back to normal', () => {
+    const effects = new PowerUpEffectManager();
+    const physics = new Physics();
+    const playerNormal = new Player();
+    const playerFeather = new Player();
+
+    // Slow Motion reduces pipe/env speed then eases back to 1
+    effects.activate('slow_motion');
+    assert.ok(effects.getEnvironmentSpeedMultiplier() < 0.7);
+    effects.update(4.8);
+    const easingMult = effects.getEnvironmentSpeedMultiplier();
+    assert.ok(easingMult > 0.56 && easingMult < 1);
+    effects.update(0.5);
+    assert.equal(effects.getEnvironmentSpeedMultiplier(), 1);
+
+    // Score Boost x2 refreshes duration, never stacks multiplier > 2x
+    effects.activate('score_boost');
+    assert.equal(effects.getScoreMultiplier(), 2);
+    effects.update(4.0);
+    const refreshed = effects.activate('score_boost');
+    assert.equal(refreshed.refreshed, true);
+    assert.equal(effects.getScoreMultiplier(), 2);
+    assert.ok(effects.scoreBoostRemaining > 9.5);
+    effects.update(10.5);
+    assert.equal(effects.getScoreMultiplier(), 1);
+
+    // Feather gently lowers gravity & max fall speed without disabling tap flap
+    effects.activate('feather');
+    playerNormal.vy = 0;
+    playerFeather.vy = 0;
+    for (let i = 0; i < 12; i++) {
+      physics.updatePlayer(playerNormal, 0.016, 1, 1);
+      physics.updatePlayer(
+        playerFeather,
+        0.016,
+        effects.getGravityScale(),
+        effects.getMaxFallVelocityScale()
+      );
+    }
+    assert.ok(playerFeather.vy < playerNormal.vy, 'Feather must slow downward acceleration');
+    physics.applyFlap(playerFeather);
+    assert.equal(playerFeather.vy, GAME_CONFIG.physics.flapStrength, 'Flap strength remains crisp');
+    effects.update(7.0);
+    assert.equal(effects.getGravityScale(), 1);
+    assert.equal(effects.getMaxFallVelocityScale(), 1);
+  });
+
+  // 22. Magnet Attraction (Collectibles Only) & Collectible Payouts
+  await runCase('Magnet smoothly pulls collectibles within radius without moving pipes or power-up orbs', () => {
+    const cm = new CollectibleManager();
+    cm.reset();
+    cm.spawn('coin', 200, 340); // within 160px of (114, 300)
+    const pipe = new Pipe(200, 300, 150, 'green');
+    const initialPipeY = pipe.gapY;
+
+    // Run a few magnet frames at 0 scroll speed to isolate pull vector
+    const item = cm.getActiveItems().find((c) => c.active)!;
+    const startX = item.x;
+    const startY = item.y;
+    cm.update(0.05, 0, 114, 300, GAME_CONFIG.player.collisionRadius, true);
+    assert.ok(item.x < startX && item.y < startY, 'Magnet pulls collectible smoothly toward player');
+    assert.equal(pipe.gapY, initialPipeY, 'Pipes are unaffected by Magnet');
+
+    // Collect Star & Gem directly under Score Boost x2 via PowerUpManager
+    storage.clear();
+    const pm = new PowerUpManager();
+    pm.resetRun();
+    pm.collectPowerUp('score_boost', 114, 300, undefined, false);
+    const player = new Player();
+    pm.collectibles.spawn('gem', player.x, player.y);
+    const out = pm.update(0.016, {
+      player,
+      pipes: [],
+      basePipeSpeed: 176,
+      difficultyMultiplier: 1,
+      particles: new (class {
+        spawnFlapPuff() {}
+        spawnCollisionBurst() {}
+      })() as unknown as import('../src/game/ParticleSystem').ParticleSystem,
+      emitPickupSounds: false,
+    });
+    assert.equal(out.bonusScoreEarned, 6, 'Gem (+3 bonus) doubled under Score Boost x2');
+    assert.equal(pm.effects.runCoinsCollected, 10, 'Gem coins (+5) doubled under Score Boost x2');
+    assert.equal(pm.effects.runGemsCollected, 1, 'Gem count recorded');
+  });
+
+  // 23. CurrencyManager Persistence, Event Deduplication & Reset
+  await runCase('CurrencyManager persists coins/gems across reloads, deduplicates milestone events, and resets cleanly', () => {
+    storage.clear();
+    const cur = new CurrencyManager();
+    cur.addGameplayRewards(12, 2, true);
+    assert.equal(cur.awardEventOnce('ach_first_flight', 5, 0), true);
+    assert.equal(cur.awardEventOnce('ach_first_flight', 5, 0), false, 'Duplicate milestone award blocked');
+
+    const reloaded = new CurrencyManager();
+    assert.equal(reloaded.getSnapshot().coins, 17);
+    assert.equal(reloaded.getSnapshot().gems, 2);
+    assert.equal(reloaded.getSnapshot().stats.totalStarsCollected, 1);
+
+    reloaded.reset();
+    assert.equal(reloaded.getSnapshot().coins, 0);
+    assert.equal(reloaded.getSnapshot().gems, 0);
+  });
+
+  // 24. Spawn Safety (Outside Pipes), Settings Persistence, and Non-Carry-Over
+  await runCase('PowerUpSpawnManager never spawns inside pipes and Settings/Run resets isolate temporary buffs', () => {
+    storage.clear();
+    const spawner = new PowerUpSpawnManager();
+    spawner.reset(12345);
+    const pipeAtSpawn = new Pipe(395, 320, 140, 'green');
+    for (let i = 0; i < 30; i++) {
+      const y = spawner.findSafeSpawnY(428, [pipeAtSpawn], []);
+      if (y !== null) {
+        assert.ok(
+          Math.abs(y - pipeAtSpawn.gapY) <= pipeAtSpawn.gapHeight * 0.25 + 1,
+          'Spawn inside pipe X range must stay safely inside the gap center band'
+        );
+      }
+    }
+
+    const sm = new SettingsManager();
+    sm.update({
+      powerUpsEnabled: false,
+      collectiblesEnabled: false,
+      powerUpFrequency: 'high',
+      visualEffectsQuality: 'low',
+    });
+    const reloaded = new SettingsManager().getSettings();
+    assert.equal(reloaded.powerUpsEnabled, false);
+    assert.equal(reloaded.collectiblesEnabled, false);
+    assert.equal(reloaded.powerUpFrequency, 'high');
+    assert.equal(reloaded.visualEffectsQuality, 'low');
+
+    // Run reset clears temporary buffs cleanly
+    const pm = new PowerUpManager();
+    pm.collectPowerUp('shield', 100, 200, undefined, false);
+    pm.collectPowerUp('score_boost', 100, 200, undefined, false);
+    pm.resetRun();
+    assert.equal(pm.effects.hasShield, false);
+    assert.equal(pm.effects.scoreBoostRemaining, 0);
+  });
+
+  // 25. Power-Up Achievements & 2P Tournament Deterministic Seed Fairness
+  await runCase('Power-Up Achievements unlock cleanly without duplicates and Tournament rounds share deterministic RNG between P1 & P2', () => {
+    storage.clear();
+    const am = new AchievementManager();
+    const unlocked1 = am.checkPowerUpMetrics(
+      {
+        shieldSaves: 3,
+        revivesUsed: 3,
+        totalCoinsCollected: 120,
+        totalGemsCollected: 12,
+        totalStarsCollected: 5,
+        totalPowerUpsCollected: 22,
+      },
+      3
+    );
+    assert.equal(unlocked1.length, 6, 'All 6 Power-Up achievements should unlock when criteria met');
+    assert.equal(am.checkScore(5).length, 2, 'Score achievements remain independent & functional');
+    const dup = am.checkPowerUpMetrics(
+      {
+        shieldSaves: 5,
+        revivesUsed: 5,
+        totalCoinsCollected: 300,
+        totalGemsCollected: 20,
+        totalStarsCollected: 10,
+        totalPowerUpsCollected: 40,
+      },
+      5
+    );
+    assert.equal(dup.length, 0, 'Achievements must never duplicate');
+
+    // Tournament P1 & P2 receive identical deterministic spawn sequence for the same round
+    const match = createInitialMatchData('P1', 'P2', 'bo3');
+    const sp1 = new PowerUpSpawnManager();
+    const sp2 = new PowerUpSpawnManager();
+    sp1.setFrequency('normal');
+    sp2.setFrequency('normal');
+    sp1.reset(match.roundSeed);
+    sp2.reset(match.roundSeed);
+
+    const log1: string[] = [];
+    const log2: string[] = [];
+    for (let step = 0; step < 300; step++) {
+      sp1.update(0.05, {
+        powerUpsEnabled: true,
+        collectiblesEnabled: true,
+        pipes: [],
+        activeCollectibles: [],
+        difficultyMultiplier: 1,
+        hasShield: false,
+        hasReviveOrUsed: false,
+        onSpawnCollectible: (t, x, y) => log1.push(`C:${t}:${Math.round(x)}:${Math.round(y)}`),
+      });
+      sp2.update(0.05, {
+        powerUpsEnabled: true,
+        collectiblesEnabled: true,
+        pipes: [],
+        activeCollectibles: [],
+        difficultyMultiplier: 1,
+        hasShield: false,
+        hasReviveOrUsed: false,
+        onSpawnCollectible: (t, x, y) => log2.push(`C:${t}:${Math.round(x)}:${Math.round(y)}`),
+      });
+    }
+    assert.deepEqual(log1, log2, 'P1 and P2 in the same tournament round must get identical spawn RNG');
   });
 
   console.log(`\nALL ${passed} TESTS PASSED.`);
