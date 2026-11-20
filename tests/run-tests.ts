@@ -171,11 +171,24 @@ async function runTests(): Promise<void> {
     { SkySystem },
     { Game },
     { POWER_UP_REGISTRY, COLLECTIBLE_REGISTRY },
-    { CurrencyManager },
+    { CurrencyManager, currencyManager },
     { PowerUpEffectManager },
     { CollectibleManager },
     { PowerUpSpawnManager },
     { PowerUpManager },
+    { MissionManager, missionManager },
+    {
+      getLocalDateKey,
+      getLocalWeekKey,
+      getMsUntilNextDailyReset,
+      getMsUntilNextWeeklyReset,
+      diffCalendarDays,
+    },
+    {
+      WEEKLY_MISSIONS,
+      SPECIAL_CHALLENGES,
+      STREAK_MILESTONES,
+    },
   ] = await Promise.all([
     import('../src/game/Config'),
     import('../src/game/Physics'),
@@ -210,6 +223,9 @@ async function runTests(): Promise<void> {
     import('../src/game/powerups/CollectibleManager'),
     import('../src/game/powerups/PowerUpSpawnManager'),
     import('../src/game/powerups/PowerUpManager'),
+    import('../src/game/missions/MissionManager'),
+    import('../src/game/missions/MissionDateUtils'),
+    import('../src/game/missions/MissionRegistry'),
   ]);
 
   let passed = 0;
@@ -1343,6 +1359,555 @@ async function runTests(): Promise<void> {
       });
     }
     assert.deepEqual(log1, log2, 'P1 and P2 in the same tournament round must get identical spawn RNG');
+  });
+
+  // 26. Singleton PowerUpManager & Game-End Effect Cleanup (TS + js/powerups/PowerUpManager.js)
+  await runCase('Singleton PowerUpManager cleans up active effects on game end in both TS engine and js/powerups/PowerUpManager.js', async () => {
+    const { powerUpManager: tsSingleton } = await import('../src/game/powerups/PowerUpManager');
+    assert.equal(PowerUpManager.getInstance(), tsSingleton);
+
+    // Trigger GAME_OVER with active buffs -> effects must be cleared immediately while preserving run coin count
+    const game = new Game(createMockCanvas(), () => {});
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    game.powerUps.collectPowerUp('slow_motion', 114, 300, undefined, false);
+    game.powerUps.collectPowerUp('score_boost', 114, 300, undefined, false);
+    game.powerUps.effects.runCoinsCollected = 9;
+    assert.ok(game.powerUps.getActiveStatuses().length >= 2);
+
+    const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
+    (game as unknown as { player: { y: number } }).player.y = groundY + 10;
+    (game as unknown as { update: (dt: number) => void }).update(0.016);
+    assert.equal(game.getState(), 'GAME_OVER');
+    assert.equal(game.powerUps.getActiveStatuses().length, 0, 'Active buffs must clear on game end');
+    assert.equal(game.powerUps.effects.runCoinsCollected, 9, 'Run coin summary stays visible for GameOverOverlay');
+    game.destroy();
+
+    // Verify js/powerups/PowerUpManager.js standalone singleton
+    const jsMod = await import('../js/powerups/PowerUpManager.js');
+    const jsMgr = jsMod.default.getInstance();
+    assert.equal(jsMgr, jsMod.powerUpManager);
+    assert.equal(new jsMod.default(), jsMgr);
+
+    jsMgr.reset();
+    jsMgr.configure({ powerUpsEnabled: true, collectiblesEnabled: true, frequency: 'high' });
+    jsMgr.spawnPowerUp('magnet', 114, 300);
+    jsMgr.spawnCollectible('gem', 114, 300);
+    const out = jsMgr.update(0.016, { x: 114, y: 300, collisionRadius: 17.5 }, []);
+    assert.deepEqual(out.collectedPowerUps, ['magnet']);
+    assert.deepEqual(out.collectedItems, ['gem']);
+    assert.equal(jsMgr.getActiveEffectsStatus().length, 1);
+
+    jsMgr.onGameEnd();
+    assert.equal(jsMgr.getActiveEffectsStatus().length, 0);
+    assert.equal(jsMgr.powerUpOrbs.length, 0);
+    assert.equal(jsMgr.collectibles.length, 0);
+  });
+
+  // 27. Daily & Weekly Mission Rotation, Eligibility, Same-Day Determinism & Midnight/Monday Resets
+  await runCase('Daily & Weekly missions filter impossible tasks, stay deterministic same day, and reset cleanly at midnight / Monday', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterSkinManager.reset();
+
+    // Sunday 2026-06-14 23:55 local time
+    let mockNow = new Date(2026, 5, 14, 23, 55, 0, 0).getTime();
+    const mm = new MissionManager({
+      nowProvider: () => mockNow,
+      eligibilityProvider: () => ({
+        unlockedWorldIds: ['green_valley'],
+        unlockedCharacterIds: ['classic_bird', 'chicky'],
+        hasRareOrHigherCharacter: false,
+        powerUpsEnabled: false,
+        collectiblesEnabled: false,
+      }),
+    });
+
+    const snap1 = mm.getSnapshot();
+    assert.equal(snap1.dailyMissions.length, 3);
+    assert.deepEqual(
+      snap1.dailyMissions.map((m) => m.difficulty),
+      ['easy', 'medium', 'hard']
+    );
+    assert.equal(snap1.weeklyMissions.length, WEEKLY_MISSIONS.length);
+    assert.equal(snap1.specialMissions.length, SPECIAL_CHALLENGES.length);
+
+    // Impossible missions (powerups, collectibles, non-starter worlds, rare+) must NOT appear
+    const disallowedIds = new Set([
+      'daily_easy_coins_10',
+      'daily_easy_powerup_2',
+      'daily_med_coins_30',
+      'daily_med_powerup_5',
+      'daily_med_stars_2',
+      'daily_med_bonus_world',
+      'daily_med_rare_char',
+      'daily_hard_coins_60',
+      'daily_hard_gems_2',
+    ]);
+    for (const m of snap1.dailyMissions) {
+      assert.equal(disallowedIds.has(m.id), false, `Ineligible mission ${m.id} must be filtered out`);
+    }
+
+    // Countdown timers must always be non-negative
+    assert.ok(getMsUntilNextDailyReset(mockNow) > 0 && getMsUntilNextDailyReset(mockNow) <= 300_000);
+    assert.ok(getMsUntilNextWeeklyReset(mockNow) > 0 && getMsUntilNextWeeklyReset(mockNow) <= 300_000);
+
+    // Emit progress before midnight & simulate reload on the same day -> preserves exact selection & progress
+    mm.emitEvent({ type: 'game_finished', mode: 'solo', worldId: 'green_valley', score: 2 });
+    const progressBeforeReload = mm.getSnapshot().dailyMissions.map((m) => ({
+      id: m.id,
+      progress: m.progress,
+    }));
+
+    const mmReloaded = new MissionManager({
+      nowProvider: () => mockNow,
+      eligibilityProvider: () => ({
+        unlockedWorldIds: ['green_valley'],
+        unlockedCharacterIds: ['classic_bird', 'chicky'],
+        hasRareOrHigherCharacter: false,
+        powerUpsEnabled: false,
+        collectiblesEnabled: false,
+      }),
+    });
+    assert.deepEqual(
+      mmReloaded.getSnapshot().dailyMissions.map((m) => ({ id: m.id, progress: m.progress })),
+      progressBeforeReload,
+      'Same-day reload must keep exact daily missions and progress'
+    );
+
+    // Cross into Monday 2026-06-15 00:05 -> both Daily AND Weekly must reset automatically
+    const sundayKey = getLocalDateKey(mockNow);
+    const sundayWeekKey = getLocalWeekKey(mockNow);
+    mockNow = new Date(2026, 5, 15, 0, 5, 0, 0).getTime();
+    mmReloaded.setNowProviderForTesting(() => mockNow);
+    const changed = mmReloaded.ensureCurrentPeriods(mockNow, true);
+    assert.equal(changed, true);
+
+    const snapMonday = mmReloaded.getSnapshot();
+    assert.notEqual(snapMonday.dailyPeriodKey, sundayKey);
+    assert.notEqual(snapMonday.weeklyPeriodKey, sundayWeekKey);
+    assert.ok(snapMonday.dailyMissions.every((m) => m.progress === 0 && !m.claimed));
+    assert.ok(snapMonday.weeklyMissions.every((m) => m.progress === 0 && !m.claimed));
+
+    // Repeated ensureCurrentPeriods on same Monday does NOT re-reset
+    assert.equal(mmReloaded.ensureCurrentPeriods(mockNow, true), false);
+
+    // Advancing to Tuesday 2026-06-16 resets Daily only, preserving Weekly progress
+    mmReloaded.emitEvent({ type: 'pipe_passed', mode: 'solo', amount: 12 });
+    const mondayWeeklyPipes = mmReloaded
+      .getSnapshot()
+      .weeklyMissions.find((w) => w.id === 'weekly_pipes_200')!.progress;
+    assert.equal(mondayWeeklyPipes, 12);
+
+    mockNow = new Date(2026, 5, 16, 8, 0, 0, 0).getTime();
+    mmReloaded.setNowProviderForTesting(() => mockNow);
+    const snapTuesday = mmReloaded.getSnapshot();
+    assert.equal(snapTuesday.weeklyPeriodKey, snapMonday.weeklyPeriodKey);
+    assert.equal(
+      snapTuesday.weeklyMissions.find((w) => w.id === 'weekly_pipes_200')!.progress,
+      12,
+      'Tuesday daily reset must preserve Monday weekly progress'
+    );
+  });
+
+  // 28. Event-Based Progress, 2P Isolation & Non-Duplicate Tournament Completion
+  await runCase('Gameplay emits accurate mission events, isolates Solo-only missions from P2, and counts Tournament wins once', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterUnlockManager.reset();
+    characterSkinManager.reset();
+    worldUnlockManager.reset();
+    missionManager.reset();
+
+    // P2 soloOnly isolation check via Game
+    const game = new Game(createMockCanvas(), () => {});
+    game.startTwoPlayerMatch('ANI', 'BUDI', 'bo3');
+
+    // Simulate Round 1 completion (NOT match complete yet -> zero match_won / tournament_won)
+    (game as unknown as { score: { current: number } }).score.current = 18;
+    (game as unknown as { twoPlayerMatch: { player1Score: number | null } }).twoPlayerMatch.player1Score = 18;
+    (game as unknown as { state: string }).state = 'PLAYER_1_GAME_OVER';
+    game.continueFromPlayer1GameOver();
+    game.startPlayer2Turn();
+    (game as unknown as { score: { current: number } }).score.current = 4;
+    (game as unknown as { twoPlayerMatch: { player2Score: number | null } }).twoPlayerMatch.player2Score = 4;
+    (game as unknown as { state: string }).state = 'PLAYER_2_GAME_OVER';
+    game.continueFromPlayer2GameOver();
+
+    assert.equal(game.getState(), 'ROUND_RESULT');
+    let champMission = missionManager
+      .getSnapshot()
+      .specialMissions.find((m) => m.id === 'special_champion')!;
+    let survivorMission = missionManager
+      .getSnapshot()
+      .specialMissions.find((m) => m.id === 'special_survivor')!;
+    assert.equal(champMission.progress, 0, 'Incomplete BO3 tournament must not count as tournament win');
+    assert.equal(survivorMission.progress, 0, '2P runs must not complete Solo-only missions');
+
+    // Finish Round 2 with Player 1 clinching 2-0 -> tournament_won emits ONCE
+    game.startNextTournamentRound();
+    (game as unknown as { score: { current: number } }).score.current = 9;
+    (game as unknown as { twoPlayerMatch: { player1Score: number | null } }).twoPlayerMatch.player1Score = 9;
+    (game as unknown as { state: string }).state = 'PLAYER_1_GAME_OVER';
+    game.continueFromPlayer1GameOver();
+    game.startPlayer2Turn();
+    (game as unknown as { score: { current: number } }).score.current = 2;
+    (game as unknown as { twoPlayerMatch: { player2Score: number | null } }).twoPlayerMatch.player2Score = 2;
+    (game as unknown as { state: string }).state = 'PLAYER_2_GAME_OVER';
+    game.continueFromPlayer2GameOver();
+
+    assert.equal(game.getState(), 'MATCH_RESULT');
+    champMission = missionManager
+      .getSnapshot()
+      .specialMissions.find((m) => m.id === 'special_champion')!;
+    const weeklyWins = missionManager
+      .getSnapshot()
+      .weeklyMissions.find((m) => m.id === 'weekly_wins_5')!;
+    assert.equal(champMission.progress, 1, 'Completed BO3 tournament must increment CHAMPION by 1');
+    assert.equal(weeklyWins.progress, 1, 'Completed BO3 tournament must increment Arena Striker by 1');
+
+    // Calling continueFromPlayer2GameOver again must be a no-op (no duplicate increment)
+    game.continueFromPlayer2GameOver();
+    assert.equal(
+      missionManager.getSnapshot().specialMissions.find((m) => m.id === 'special_champion')!.progress,
+      1
+    );
+
+    // Solo Gameplay run updates coins, pipes, score, and game_finished accurately without disturbing physics
+    game.startReady();
+    (game as unknown as { handleActionInput: () => void }).handleActionInput();
+    assert.equal(game.getState(), 'PLAYING');
+
+    const player = (game as unknown as { player: import('../src/game/Player').Player }).player;
+    game.powerUps.collectibles.spawn('coin', player.x, player.y);
+    game.powerUps.collectibles.spawn('gem', player.x, player.y);
+    (game as unknown as { update: (dt: number) => void }).update(0.016);
+
+    const snapDuringRun = missionManager.getSnapshot();
+    const coinHunter = snapDuringRun.specialMissions.find((m) => m.id === 'special_coin_hunter')!;
+    // coin (+1) + gem (+5 coins) = 6 coins
+    assert.ok(coinHunter.progress >= 6, 'Solo collectible pickup must emit exact coin progress');
+
+    game.destroy();
+  });
+
+  // 29. Idempotent Reward Claiming, Currency Payouts, Reload Persistence & History
+  await runCase('Mission claiming grants Coin/Gem/Cosmetics strictly once, persists across reload, and records History', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterSkinManager.reset();
+
+    const fixedNow = new Date(2026, 5, 17, 14, 0, 0, 0).getTime();
+    const mm = new MissionManager({ nowProvider: () => fixedNow });
+
+    // Uncompleted mission cannot be claimed
+    const unready = mm.claimReward('special_coin_hunter');
+    assert.equal(unready.success, false);
+
+    // Complete special_coin_hunter (100 coins)
+    mm.emitEvent({ type: 'coin_collected', amount: 100 });
+    const coinBefore = currencyManager.getSnapshot().coins;
+    const gemBefore = currencyManager.getSnapshot().gems;
+
+    const claim1 = mm.claimReward('special_coin_hunter');
+    assert.equal(claim1.success, true);
+    assert.equal(currencyManager.getSnapshot().coins, coinBefore + 400);
+    assert.equal(currencyManager.getSnapshot().gems, gemBefore + 10);
+    assert.ok(mm.getSnapshot().cosmetics.badges.includes('COIN HUNTER'));
+
+    // Duplicate claim immediately rejected & currency unchanged
+    const claim2 = mm.claimReward('special_coin_hunter');
+    assert.equal(claim2.success, false);
+    assert.equal(currencyManager.getSnapshot().coins, coinBefore + 400);
+    assert.equal(currencyManager.getSnapshot().gems, gemBefore + 10);
+
+    // Reload MissionManager & CurrencyManager -> claimed status & history remain intact
+    const mmReloaded = new MissionManager({ nowProvider: () => fixedNow });
+    const reloadedCoinHunter = mmReloaded
+      .getSnapshot()
+      .specialMissions.find((m) => m.id === 'special_coin_hunter')!;
+    assert.equal(reloadedCoinHunter.claimed, true);
+    assert.equal(mmReloaded.claimReward('special_coin_hunter').success, false);
+    assert.ok(
+      mmReloaded
+        .getSnapshot()
+        .history.some((h) => h.missionId === 'special_coin_hunter' && h.status === 'claimed')
+    );
+    assert.equal(mmReloaded.getSnapshot().stats.totalClaimed, 1);
+    assert.equal(mmReloaded.getSnapshot().stats.totalCoinsEarned, 400);
+    assert.equal(mmReloaded.getSnapshot().stats.totalGemsEarned, 10);
+  });
+
+  // 30. Daily Streak & Milestone Bonuses (Consecutive Days, Same-Day Cap, Missed Reset, Clock Rewind Safety)
+  await runCase('Daily Streak increments max +1/day, awards milestone bonuses once, resets on missed day, and resists clock rewind', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterSkinManager.reset();
+
+    assert.equal(diffCalendarDays('2026-06-14', '2026-06-15'), 1);
+    assert.equal(diffCalendarDays('2026-06-14', '2026-06-17'), 3);
+
+    let mockNow = new Date(2026, 5, 10, 10, 0, 0, 0).getTime();
+    const mm = new MissionManager({
+      nowProvider: () => mockNow,
+      eligibilityProvider: () => ({
+        unlockedWorldIds: ['green_valley'],
+        unlockedCharacterIds: ['classic_bird', 'chicky'],
+        hasRareOrHigherCharacter: false,
+        powerUpsEnabled: true,
+        collectiblesEnabled: true,
+      }),
+    });
+
+    const completeAndClaimTwoDailies = () => {
+      // Trigger lots of gameplay events so whichever Easy/Medium daily missions rotated in finish
+      for (let i = 0; i < 10; i++) {
+        mm.emitEvent({ type: 'pipe_passed', mode: 'solo', worldId: 'green_valley', characterId: 'classic_bird', amount: 15 });
+        mm.emitEvent({ type: 'score_reached', mode: 'solo', score: 25, worldId: 'green_valley', characterId: 'classic_bird' });
+        mm.emitEvent({ type: 'coin_collected', amount: 25 });
+        mm.emitEvent({ type: 'star_collected', amount: 2 });
+        mm.emitEvent({ type: 'gem_collected', amount: 2 });
+        mm.emitEvent({ type: 'powerup_used', powerUpId: 'shield' });
+        mm.emitEvent({ type: 'game_finished', mode: 'solo', worldId: 'green_valley', characterId: 'classic_bird', score: 25 });
+        mm.emitEvent({ type: 'multiplayer_played', mode: 'quick' });
+        mm.emitEvent({ type: 'tournament_won', mode: 'bo3', winner: 'player1' });
+      }
+      const dailyList = mm.getSnapshot().dailyMissions;
+      return dailyList.map((m) => mm.claimReward(m.id));
+    };
+
+    // Day 1: claiming all 3 daily missions must increment streak to 1 ONLY (max +1/day)
+    const day1Claims = completeAndClaimTwoDailies();
+    assert.ok(day1Claims.every((c) => c.success));
+    assert.equal(mm.getSnapshot().streak.currentStreak, 1);
+    assert.equal(mm.getSnapshot().streak.bestStreak, 1);
+
+    // Day 2 & Day 3 -> Day 3 unlocks 3-Day Spark milestone reward ONCE
+    for (const day of [11, 12]) {
+      mockNow = new Date(2026, 5, day, 10, 0, 0, 0).getTime();
+      mm.setNowProviderForTesting(() => mockNow);
+      mm.ensureCurrentPeriods(mockNow, true);
+      const res = completeAndClaimTwoDailies();
+      if (day === 12) {
+        const milestoneHit = res.find((r) => r.streakMilestonesUnlocked.length > 0);
+        assert.ok(milestoneHit, 'Day 3 must unlock 3-Day Streak Milestone');
+        assert.equal(milestoneHit.streakMilestonesUnlocked[0].days, STREAK_MILESTONES[0].days);
+      }
+    }
+    assert.equal(mm.getSnapshot().streak.currentStreak, 3);
+    assert.equal(mm.getSnapshot().streak.bestStreak, 3);
+    assert.deepEqual(mm.getSnapshot().streak.claimedMilestones, [3]);
+
+    // Clock rewind back to Day 11 must NOT corrupt or re-grant streak
+    const coinsBeforeRewind = currencyManager.getSnapshot().coins;
+    mockNow = new Date(2026, 5, 11, 12, 0, 0, 0).getTime();
+    mm.setNowProviderForTesting(() => mockNow);
+    mm.ensureCurrentPeriods(mockNow, true);
+    assert.equal(mm.getSnapshot().streak.currentStreak, 3, 'Clock rewind must not erase valid streak');
+    assert.equal(currencyManager.getSnapshot().coins, coinsBeforeRewind);
+
+    // Skipping Day 13 & Day 14 -> checking on Day 14 resets currentStreak to 0, keeps bestStreak=3
+    mockNow = new Date(2026, 5, 14, 10, 0, 0, 0).getTime();
+    mm.setNowProviderForTesting(() => mockNow);
+    assert.equal(mm.getSnapshot().streak.currentStreak, 0, 'Missed calendar day must reset active streak');
+    assert.equal(mm.getSnapshot().streak.bestStreak, 3, 'Best streak must be preserved');
+
+    // Claiming on Day 14 restarts streak at 1 and does NOT duplicate Day 3 milestone when reaching 3 again
+    completeAndClaimTwoDailies();
+    assert.equal(mm.getSnapshot().streak.currentStreak, 1);
+    mockNow = new Date(2026, 5, 15, 10, 0, 0, 0).getTime();
+    mm.setNowProviderForTesting(() => mockNow);
+    completeAndClaimTwoDailies();
+    mockNow = new Date(2026, 5, 16, 10, 0, 0, 0).getTime();
+    mm.setNowProviderForTesting(() => mockNow);
+    const repeatDay3 = completeAndClaimTwoDailies();
+    assert.ok(
+      repeatDay3.every((r) => r.streakMilestonesUnlocked.length === 0),
+      'Previously claimed 3-day milestone must never pay out twice'
+    );
+  });
+
+  // 31. Special Challenges (PERFECT FLYER, POWER MASTER 6/6, SURVIVOR, WORLD EXPLORER), Cosmetics & Settings
+  await runCase('Special Challenges track multi-condition/distinct progress accurately and Mission Settings + Cosmetics persist', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterSkinManager.reset();
+
+    const mm = new MissionManager({ nowProvider: () => new Date(2026, 5, 20, 12, 0, 0, 0).getTime() });
+
+    // Colliding in a run blocks PERFECT FLYER even if score >= 15, whereas clean run completes it
+    mm.emitEvent({
+      type: 'score_reached',
+      mode: 'solo',
+      score: 16,
+      collidedThisRun: true,
+      usedShieldThisRun: false,
+      usedSecondChanceThisRun: false,
+    });
+    assert.equal(
+      mm.getSnapshot().specialMissions.find((m) => m.id === 'special_perfect_flyer')!.completed,
+      false
+    );
+
+    mm.emitEvent({
+      type: 'score_reached',
+      mode: 'solo',
+      score: 15,
+      collidedThisRun: false,
+      usedShieldThisRun: false,
+      usedSecondChanceThisRun: false,
+    });
+    assert.equal(
+      mm.getSnapshot().specialMissions.find((m) => m.id === 'special_perfect_flyer')!.completed,
+      true
+    );
+
+    // Using Second Chance blocks SURVIVOR; achieving 20 without Second Chance completes it
+    mm.emitEvent({
+      type: 'score_reached',
+      mode: 'solo',
+      score: 21,
+      usedSecondChanceThisRun: true,
+    });
+    assert.equal(
+      mm.getSnapshot().specialMissions.find((m) => m.id === 'special_survivor')!.completed,
+      false
+    );
+    mm.emitEvent({
+      type: 'score_reached',
+      mode: 'solo',
+      score: 20,
+      usedSecondChanceThisRun: false,
+    });
+    assert.equal(
+      mm.getSnapshot().specialMissions.find((m) => m.id === 'special_survivor')!.completed,
+      true
+    );
+
+    // POWER MASTER tracks 6 DISTINCT power-ups (repeats of same powerup do NOT finish it)
+    for (let i = 0; i < 6; i++) {
+      mm.emitEvent({ type: 'powerup_used', powerUpId: 'shield' });
+    }
+    const pmPartial = mm.getSnapshot().specialMissions.find((m) => m.id === 'special_power_master')!;
+    assert.equal(pmPartial.progress, 1);
+    assert.equal(pmPartial.completed, false);
+
+    for (const pId of ['second_chance', 'slow_motion', 'magnet', 'score_boost', 'feather'] as const) {
+      mm.emitEvent({ type: 'powerup_used', powerUpId: pId });
+    }
+    const pmDone = mm.getSnapshot().specialMissions.find((m) => m.id === 'special_power_master')!;
+    assert.equal(pmDone.progress, 6);
+    assert.equal(pmDone.completed, true);
+
+    const claimPM = mm.claimReward('special_power_master');
+    assert.equal(claimPM.success, true);
+    assert.equal(claimPM.unlockedCosmetics.skinId, 'retro_pixel');
+    assert.equal(characterSkinManager.isUnlocked('retro_pixel'), true);
+
+    // Claim PERFECT FLYER unlocks & equips Sky Precision frame & SKY PRECISION title
+    const claimPerfect = mm.claimReward('special_perfect_flyer');
+    assert.equal(claimPerfect.success, true);
+    assert.equal(mm.getSnapshot().cosmetics.equippedFrame, 'perfect_wings');
+    mm.equipTitle('POWER MASTER');
+    assert.equal(mm.getSnapshot().cosmetics.equippedTitle, 'POWER MASTER');
+
+    // WORLD EXPLORER tracks 5 distinct worlds
+    for (const wId of ['green_valley', 'candy_world', 'snow_land', 'lava_world', 'neon_city'] as const) {
+      mm.emitEvent({ type: 'world_played', worldId: wId });
+    }
+    assert.equal(
+      mm.getSnapshot().specialMissions.find((m) => m.id === 'special_world_explorer')!.completed,
+      true
+    );
+
+    // Mission Settings toggles persist cleanly across reloads
+    const sm = new SettingsManager();
+    sm.update({
+      missionNotificationsEnabled: false,
+      missionSoundsEnabled: false,
+      missionRewardAnimationEnabled: false,
+      reducedMotion: true,
+      missionReminderEnabled: false,
+    });
+    const reloadedSettings = new SettingsManager().getSettings();
+    assert.equal(reloadedSettings.missionNotificationsEnabled, false);
+    assert.equal(reloadedSettings.missionSoundsEnabled, false);
+    assert.equal(reloadedSettings.missionRewardAnimationEnabled, false);
+    assert.equal(reloadedSettings.reducedMotion, true);
+    assert.equal(reloadedSettings.missionReminderEnabled, false);
+
+    // Clean reset
+    mm.reset();
+    assert.equal(mm.getSnapshot().history.length, 0);
+    assert.equal(mm.getSnapshot().streak.bestStreak, 0);
+    assert.equal(mm.getSnapshot().cosmetics.equippedTitle, null);
+    assert.equal(mm.getSnapshot().cosmetics.equippedFrame, 'default');
+  });
+
+  // 32. Standalone ES Module js/missions/MissionManager.js
+  await runCase('js/missions/MissionManager.js manages daily/weekly resets, completion queue, localStorage persistence, and wallet payouts', async () => {
+    storage.clear();
+    const jsMissionMod = await import('../js/missions/MissionManager.js');
+    const jsMM = jsMissionMod.default.getInstance();
+    assert.equal(jsMM, jsMissionMod.missionManager);
+    assert.equal(new jsMissionMod.default(), jsMM);
+
+    // Sunday 2026-06-14 23:58 -> crosses into Monday 2026-06-15 00:02
+    let mockNow = new Date(2026, 5, 14, 23, 58, 0, 0).getTime();
+    jsMM.configure({
+      nowProvider: () => mockNow,
+      eligibilityProvider: () => ({
+        unlockedWorldIds: ['green_valley'],
+        unlockedCharacterIds: ['classic_bird', 'chicky'],
+        hasRareOrHigherCharacter: false,
+        powerUpsEnabled: true,
+        collectiblesEnabled: true,
+      }),
+    });
+    jsMM.reset();
+
+    const receivedNotes: string[] = [];
+    const unsub = jsMM.subscribeNotifications((note: { missionId: string }) => {
+      receivedNotes.push(note.missionId);
+    });
+
+    // Track gameplay events completing special_coin_hunter -> enters completionQueue
+    jsMM.trackEvent({ type: 'coin_collected', amount: 100 });
+    assert.ok(receivedNotes.includes('special_coin_hunter'));
+    assert.ok(jsMM.getCompletionQueue().some((n) => n.missionId === 'special_coin_hunter'));
+
+    // Claiming grants coins & gems directly into flappy_face_currency wallet + consumes queue entry
+    const claim = jsMM.claimReward('special_coin_hunter');
+    assert.equal(claim.success, true);
+    assert.equal(claim.walletBalance?.coins, 400);
+    assert.equal(claim.walletBalance?.gems, 10);
+    assert.equal(jsMM.claimReward('special_coin_hunter').success, false, 'Wallet claim must stay idempotent');
+    assert.equal(
+      jsMM.getCompletionQueue().some((n) => n.missionId === 'special_coin_hunter'),
+      false,
+      'Claiming removes claimed mission from completion queue'
+    );
+
+    // Verify localStorage persistence across reloadFromStorage
+    jsMM.reloadFromStorage();
+    assert.equal(jsMM.getWalletBalance().coins, 400);
+    assert.equal(jsMM.getWalletBalance().gems, 10);
+    assert.equal(
+      jsMM.getSnapshot().specialMissions.find((m) => m.id === 'special_coin_hunter')!.claimed,
+      true
+    );
+
+    // Advance device date across midnight into Monday -> triggers daily & weekly reset cleanly
+    const sundayDailyKey = jsMM.getSnapshot().dailyPeriodKey;
+    const sundayWeeklyKey = jsMM.getSnapshot().weeklyPeriodKey;
+    mockNow = new Date(2026, 5, 15, 0, 2, 0, 0).getTime();
+    jsMM.configure({ nowProvider: () => mockNow });
+    const resetTriggered = jsMM.ensureCurrentPeriods(mockNow, true);
+    assert.equal(resetTriggered, true);
+    assert.notEqual(jsMM.getSnapshot().dailyPeriodKey, sundayDailyKey);
+    assert.notEqual(jsMM.getSnapshot().weeklyPeriodKey, sundayWeeklyKey);
+
+    unsub();
   });
 
   console.log(`\nALL ${passed} TESTS PASSED.`);

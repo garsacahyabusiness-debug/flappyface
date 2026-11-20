@@ -3,6 +3,7 @@ import {
   Award,
   BarChart3,
   Camera,
+  ClipboardCheck,
   Compass,
   Crown,
   Info,
@@ -16,6 +17,8 @@ import {
 import { audioManager } from '../game/audio/AudioManager';
 import { getCharacterById, RARITY_META } from '../game/character/CharacterRegistry';
 import { SkinId } from '../game/character/CharacterSkinManager';
+import { AVATAR_FRAME_META } from '../game/missions/MissionRegistry';
+import { AvatarFrameId } from '../game/missions/MissionTypes';
 import { getWorldById, WorldId } from '../game/worlds/WorldRegistry';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 import { CurrencyDisplay } from './CurrencyDisplay';
@@ -38,10 +41,15 @@ interface MainMenuProps {
   hasWorldExplorerBadge: boolean;
   coins: number;
   gems: number;
+  unclaimedMissions: number;
+  missionReminderEnabled: boolean;
+  equippedMissionTitle: string | null;
+  equippedMissionFrame: AvatarFrameId;
   onPlay: () => void;
   onTwoPlayer: () => void;
   onTournament: () => void;
   onWorlds: () => void;
+  onMissions: () => void;
   onCharacters: () => void;
   onLeaderboard: () => void;
   onChangeFace: () => void;
@@ -68,10 +76,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   hasWorldExplorerBadge,
   coins,
   gems,
+  unclaimedMissions,
+  missionReminderEnabled,
+  equippedMissionTitle,
+  equippedMissionFrame,
   onPlay,
   onTwoPlayer,
   onTournament,
   onWorlds,
+  onMissions,
   onCharacters,
   onLeaderboard,
   onChangeFace,
@@ -83,6 +96,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const activeChar = getCharacterById(activeCharacterId);
   const rarity = RARITY_META[activeChar.rarity];
   const activeWorld = getWorldById(activeWorldId);
+  const frameMeta = AVATAR_FRAME_META[equippedMissionFrame] ?? AVATAR_FRAME_META.default;
 
   return (
     <div className="anim-fade-in relative z-20 flex h-full w-full flex-col justify-between overflow-y-auto px-4 pt-safe pb-safe sm:px-5">
@@ -143,19 +157,32 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               <span>WORLD EXPLORER</span>
             </div>
           )}
+
+          {equippedMissionTitle && (
+            <div className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-gradient-to-r from-[#FDE047] to-[#FB923C] px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]">
+              <Sparkles className="h-3 w-3" />
+              <span>{equippedMissionTitle}</span>
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Center: Animated Character Showcase & Active World Selector Chip */}
+      {/* Center: Animated Character Showcase & Active World / Mission Bar */}
       <div className="flex min-h-[78px] flex-1 flex-col items-center justify-center overflow-hidden py-0.5">
-        <CharacterShowcaseCanvas
-          customFaceImg={isCustomFaceActive ? customFaceImg : null}
-          characterId={activeCharacterId}
-          skinId={activeSkinId}
-          rarity={isCustomFaceActive ? undefined : activeChar.rarity}
-          size={104}
-          animate={true}
-        />
+        <div
+          className={`rounded-full p-0.5 ${
+            equippedMissionFrame !== 'default' ? frameMeta.ringClass : ''
+          }`}
+        >
+          <CharacterShowcaseCanvas
+            customFaceImg={isCustomFaceActive ? customFaceImg : null}
+            characterId={activeCharacterId}
+            skinId={activeSkinId}
+            rarity={isCustomFaceActive ? undefined : activeChar.rarity}
+            size={96}
+            animate={true}
+          />
+        </div>
         <span
           className={`mt-0.5 inline-flex items-center rounded-full border border-[#24415C] px-2 py-0.5 text-[9px] font-black tracking-wider uppercase shadow-[0_1px_0_#24415C] ${
             isCustomFaceActive
@@ -166,20 +193,42 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           {isCustomFaceActive ? 'CUSTOM FACE' : activeChar.name}
         </span>
 
-        <button
-          type="button"
-          onClick={() => {
-            audioManager.playButton();
-            onWorlds();
-          }}
-          className="btn-base btn-secondary mt-1.5 min-h-[30px] rounded-full px-3 py-0.5 text-[10px]"
-        >
-          <Compass className="h-3.5 w-3.5 shrink-0 text-[#3998F7]" />
-          <span>WORLD: {activeWorld.name}</span>
-          <span className="rounded-md bg-[#FFD84D] px-1.5 py-0.5 text-[9px] font-black text-[#24415C]">
-            {worldUnlockedCount}/{worldTotalCount}
-          </span>
-        </button>
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              audioManager.playButton();
+              onWorlds();
+            }}
+            className="btn-base btn-secondary min-h-[34px] rounded-full px-2.5 py-0.5 text-[10px]"
+          >
+            <Compass className="h-3.5 w-3.5 shrink-0 text-[#3998F7]" />
+            <span>{activeWorld.name}</span>
+            <span className="rounded-md bg-[#FFD84D] px-1 py-0.5 text-[9px] font-black text-[#24415C]">
+              {worldUnlockedCount}/{worldTotalCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              audioManager.playButton();
+              onMissions();
+            }}
+            className="btn-base btn-secondary min-h-[34px] rounded-full px-2.5 py-0.5 text-[10px]"
+          >
+            <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-[#32B85C]" />
+            <span>MISSIONS</span>
+            {missionReminderEnabled && unclaimedMissions > 0 && (
+              <span
+                aria-label={`${unclaimedMissions} rewards ready`}
+                className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-[#24415C] bg-[#FF6B6B] px-1 text-[9px] font-black tabular-nums text-white"
+              >
+                {unclaimedMissions}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Bottom: Mode Selection & Secondary Arcade Buttons */}

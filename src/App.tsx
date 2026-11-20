@@ -21,6 +21,11 @@ import {
   MatchHistoryEntry,
 } from './game/progression/LeaderboardManager';
 import { GameStats, statsManager } from './game/progression/StatsManager';
+import { missionManager } from './game/missions/MissionManager';
+import {
+  MissionCompletionNotification,
+  MissionSnapshot,
+} from './game/missions/MissionTypes';
 import { pwaManager } from './game/pwa/PWAManager';
 import { GameSettings, settingsManager } from './game/settings/SettingsManager';
 import {
@@ -43,6 +48,8 @@ import { GameOverOverlay } from './ui/GameOverOverlay';
 import { LeaderboardUI } from './ui/LeaderboardUI';
 import { MainMenu } from './ui/MainMenu';
 import { MatchResultOverlay } from './ui/MatchResultOverlay';
+import { MissionCenterScreen } from './ui/MissionCenterScreen';
+import { MissionNotificationToast } from './ui/MissionNotificationToast';
 import { OfflineIndicator } from './ui/OfflineIndicator';
 import { PauseOverlay } from './ui/PauseOverlay';
 import { PowerUpHUD } from './ui/PowerUpHUD';
@@ -98,6 +105,10 @@ export default function App() {
     leaderboardManager.getMatchHistory()
   );
   const [currency, setCurrency] = useState<CurrencySnapshot>(() => currencyManager.getSnapshot());
+  const [missionSnapshot, setMissionSnapshot] = useState<MissionSnapshot>(() =>
+    missionManager.getSnapshot()
+  );
+  const [missionQueue, setMissionQueue] = useState<MissionCompletionNotification[]>([]);
   const [achievementQueue, setAchievementQueue] = useState<AchievementRecord[]>([]);
   const [characterUnlockQueue, setCharacterUnlockQueue] = useState<CharacterDefinition[]>([]);
   const [worldUnlockQueue, setWorldUnlockQueue] = useState<WorldDefinition[]>([]);
@@ -165,6 +176,10 @@ export default function App() {
     setAchievementQueue((prev) => prev.slice(1));
   }, []);
 
+  const consumeCurrentMissionNotification = useCallback(() => {
+    setMissionQueue((prev) => prev.slice(1));
+  }, []);
+
   // Initialize PWA lifecycle & service worker
   useEffect(() => {
     pwaManager.init();
@@ -210,6 +225,12 @@ export default function App() {
     const unsubFavs = characterFavorites.subscribe(() => setCollectionVersion((v) => v + 1));
     const unsubRand = characterRandomizer.subscribe(() => setCollectionVersion((v) => v + 1));
     const unsubCurrency = currencyManager.subscribe((snap) => setCurrency(snap));
+    const unsubMissions = missionManager.subscribe((snap) => setMissionSnapshot(snap));
+    const unsubMissionNotes = missionManager.subscribeNotifications((note) => {
+      if (settingsManager.getSettings().missionNotificationsEnabled) {
+        setMissionQueue((prev) => [...prev, note]);
+      }
+    });
     return () => {
       unsubSettings();
       unsubAchievements();
@@ -221,6 +242,8 @@ export default function App() {
       unsubFavs();
       unsubRand();
       unsubCurrency();
+      unsubMissions();
+      unsubMissionNotes();
     };
   }, []);
 
@@ -424,6 +447,7 @@ export default function App() {
         currentState === 'TWO_PLAYER_SETUP' ||
         currentState === 'LEADERBOARD' ||
         currentState === 'ACHIEVEMENTS' ||
+        currentState === 'MISSION_CENTER' ||
         currentState === 'STATS' ||
         currentState === 'SETTINGS' ||
         currentState === 'ABOUT' ||
@@ -576,6 +600,16 @@ export default function App() {
           onConsumeCurrent={consumeCurrentAchievement}
         />
 
+        {/* NON-BLOCKING QUEUED MISSION COMPLETION TOAST */}
+        <MissionNotificationToast
+          queue={missionQueue}
+          enabled={settings.missionNotificationsEnabled}
+          suppressed={achievementQueue.length > 0}
+          isPlaying={isFlightOrCountdown}
+          onConsumeCurrent={consumeCurrentMissionNotification}
+          onOpenMissionCenter={() => gameRef.current?.setMenuState('MISSION_CENTER')}
+        />
+
         {/* NON-BLOCKING NEW BEST HUD CELEBRATION */}
         {uiState.state === 'PLAYING' && showNewBestBanner && (
           <div className="pointer-events-none absolute top-24 left-1/2 z-20 -translate-x-1/2">
@@ -668,6 +702,10 @@ export default function App() {
               hasWorldExplorerBadge={worldSummary.hasWorldExplorerBadge}
               coins={currency.coins}
               gems={currency.gems}
+              unclaimedMissions={missionSnapshot.unclaimed.total}
+              missionReminderEnabled={settings.missionReminderEnabled}
+              equippedMissionTitle={missionSnapshot.cosmetics.equippedTitle}
+              equippedMissionFrame={missionSnapshot.cosmetics.equippedFrame}
               onPlay={() => gameRef.current?.startReady()}
               onTwoPlayer={() => {
                 const current = loadStoredPlayerNames();
@@ -695,6 +733,10 @@ export default function App() {
                 setWorldFocusId(activeWorldId);
                 setWorldReturnState('MAIN_MENU');
                 gameRef.current?.setMenuState('WORLD_SELECT');
+              }}
+              onMissions={() => {
+                missionManager.ensureCurrentPeriods();
+                gameRef.current?.setMenuState('MISSION_CENTER');
               }}
               onCharacters={() => {
                 setCharEditorTarget('default');
@@ -944,6 +986,26 @@ export default function App() {
           </div>
         )}
 
+        {/* MISSION CENTER SCREEN */}
+        {uiState.state === 'MISSION_CENTER' && (
+          <div className="absolute inset-0 z-20">
+            <MissionCenterScreen
+              snapshot={missionSnapshot}
+              coins={currency.coins}
+              gems={currency.gems}
+              customFaceImg={customFaceImg}
+              activeCharacterId={defaultSelection.characterId}
+              activeSkinId={defaultSkinId}
+              isCustomFaceActive={
+                defaultSelection.mode === 'custom_face' && Boolean(customFaceImg)
+              }
+              rewardAnimationEnabled={settings.missionRewardAnimationEnabled}
+              reducedMotion={settings.reducedMotion}
+              onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
+            />
+          </div>
+        )}
+
         {/* STATS SCREEN */}
         {uiState.state === 'STATS' && (
           <div className="absolute inset-0 z-20">
@@ -982,10 +1044,12 @@ export default function App() {
               onResetAllData={async () => {
                 gameRef.current?.resetProgression();
                 gameRef.current?.resetCollectionAndSkins();
+                missionManager.reset();
                 settingsManager.resetToDefaults();
                 leaderboardManager.reset();
                 resetStoredPlayerNames();
                 setTwoPlayerDraftNames(loadStoredPlayerNames());
+                setMissionQueue([]);
                 setCharacterUnlockQueue([]);
                 setWorldUnlockQueue([]);
                 await Promise.all([

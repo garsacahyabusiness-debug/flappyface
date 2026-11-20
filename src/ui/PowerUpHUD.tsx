@@ -22,17 +22,19 @@ export const PowerUpHUD: React.FC<PowerUpHUDProps> = ({
   return (
     <div className="pointer-events-none absolute top-12 left-4 z-20 flex flex-col items-start gap-1.5">
       {collectiblesEnabled && (
-        <div className="inline-flex items-center gap-2 rounded-xl border-2 border-[#24415C] bg-white/88 px-2 py-0.5 text-[11px] font-black text-[#24415C] shadow-[0_2px_0_#24415C]">
-          <span className="inline-flex items-center gap-0.5 tabular-nums">
+        <div
+          aria-label="Collectibles collected this run"
+          className="inline-flex items-center gap-2 rounded-xl border-2 border-[#24415C] bg-white/88 px-2.5 py-0.5 text-[11px] font-black text-[#24415C] shadow-[0_2px_0_#24415C]"
+        >
+          <span className="inline-flex items-center gap-1 tabular-nums">
             <span aria-hidden="true">🪙</span>
-            <span>+{runCoins}</span>
+            <span>{runCoins}</span>
           </span>
-          {runGems > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[#0284C7] tabular-nums">
-              <span aria-hidden="true">💎</span>
-              <span>+{runGems}</span>
-            </span>
-          )}
+          <span className="h-3 w-[1.5px] bg-[#24415C]/20" aria-hidden="true" />
+          <span className="inline-flex items-center gap-1 text-[#0284C7] tabular-nums">
+            <span aria-hidden="true">💎</span>
+            <span>{runGems}</span>
+          </span>
         </div>
       )}
 

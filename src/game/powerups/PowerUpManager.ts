@@ -37,6 +37,10 @@ export interface PowerUpUpdateOutput {
   bonusScoreEarned: number;
   banner: PowerUpBannerEvent | null;
   currencyChanged: boolean;
+  coinsEarned: number;
+  gemsEarned: number;
+  starsCollected: number;
+  collectedPowerUpIds: PowerUpId[];
 }
 
 interface FloatingPickupText {
@@ -50,6 +54,15 @@ interface FloatingPickupText {
 }
 
 export class PowerUpManager {
+  private static instance: PowerUpManager | null = null;
+
+  public static getInstance(): PowerUpManager {
+    if (!PowerUpManager.instance) {
+      PowerUpManager.instance = new PowerUpManager();
+    }
+    return PowerUpManager.instance;
+  }
+
   public readonly effects = new PowerUpEffectManager();
   public readonly spawner = new PowerUpSpawnManager();
   public readonly collectibles = new CollectibleManager();
@@ -81,6 +94,14 @@ export class PowerUpManager {
     this.floatingTexts = [];
     this.trailTimer = 0;
     this.elapsed = 0;
+  }
+
+  public cleanupOnGameEnd(): void {
+    this.effects.clearActiveEffects();
+    this.spawner.reset();
+    this.collectibles.reset();
+    this.floatingTexts = [];
+    this.trailTimer = 0;
   }
 
   public update(
@@ -132,6 +153,10 @@ export class PowerUpManager {
 
     let bonusScoreEarned = 0;
     let currencyChanged = false;
+    let totalCoinsEarned = 0;
+    let totalGemsEarned = 0;
+    let starsCollected = 0;
+    const collectedPowerUpIds: PowerUpId[] = [];
     const mult = this.effects.getScoreMultiplier();
 
     for (const item of pickedCollectibles) {
@@ -141,6 +166,9 @@ export class PowerUpManager {
 
       this.effects.runCoinsCollected += coinsEarned;
       this.effects.runGemsCollected += gemsEarned;
+      totalCoinsEarned += coinsEarned;
+      totalGemsEarned += gemsEarned;
+      if (item.type === 'star') starsCollected += 1;
       bonusScoreEarned += bonusScore;
       currencyChanged = true;
 
@@ -190,6 +218,7 @@ export class PowerUpManager {
         );
         if (result) {
           banner = result;
+          collectedPowerUpIds.push(orb.powerUpId);
         }
       }
     }
@@ -212,6 +241,10 @@ export class PowerUpManager {
       bonusScoreEarned,
       banner,
       currencyChanged,
+      coinsEarned: totalCoinsEarned,
+      gemsEarned: totalGemsEarned,
+      starsCollected,
+      collectedPowerUpIds,
     };
   }
 
@@ -367,6 +400,27 @@ export class PowerUpManager {
 
   public getActiveStatuses(): ActivePowerUpStatus[] {
     return this.effects.getActiveHUDList();
+  }
+
+  public getRemainingDuration(id: PowerUpId): number {
+    switch (id) {
+      case 'slow_motion':
+        return this.effects.slowMotionRemaining;
+      case 'magnet':
+        return this.effects.magnetRemaining;
+      case 'score_boost':
+        return this.effects.scoreBoostRemaining;
+      case 'feather':
+        return this.effects.featherRemaining;
+      case 'shield':
+        return this.effects.hasShield ? 1 : 0;
+      case 'second_chance':
+        return this.effects.hasReviveCharge ? 1 : 0;
+    }
+  }
+
+  public hasActivePowerUp(id: PowerUpId): boolean {
+    return this.getRemainingDuration(id) > 0;
   }
 
   public drawScreenTint(ctx: CanvasRenderingContext2D): void {
@@ -579,3 +633,5 @@ export class PowerUpManager {
     ctx.restore();
   }
 }
+
+export const powerUpManager = PowerUpManager.getInstance();

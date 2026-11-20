@@ -253,6 +253,22 @@ export class SoundGenerator {
     this.playTone(ctx, output, 2093.0, 'sine', now + 0.12, 0.15, 0.15);
   }
 
+  public playMissionComplete(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [659.25, 783.99, 987.77, 1318.51];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'triangle', now + idx * 0.06, 0.16, 0.16);
+    });
+  }
+
+  public playMissionClaim(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [587.33, 783.99, 1046.5, 1318.51, 1567.98];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'sine', now + idx * 0.05, 0.18, 0.18);
+    });
+  }
+
   private playTone(
     ctx: AudioContext,
     output: GainNode,

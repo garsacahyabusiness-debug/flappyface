@@ -11,6 +11,7 @@ export interface AudioVolumes {
   musicEnabled: boolean;
   sfxEnabled: boolean;
   ambientEnabled?: boolean;
+  missionSoundsEnabled?: boolean;
 }
 
 function clamp01(v: number): number {
@@ -35,6 +36,7 @@ export class AudioManager {
     musicEnabled: true,
     sfxEnabled: true,
     ambientEnabled: true,
+    missionSoundsEnabled: true,
   };
 
   private unlocked = false;
@@ -146,6 +148,10 @@ export class AudioManager {
         typeof next.ambientEnabled === 'boolean'
           ? next.ambientEnabled
           : this.config.ambientEnabled,
+      missionSoundsEnabled:
+        typeof next.missionSoundsEnabled === 'boolean'
+          ? next.missionSoundsEnabled
+          : this.config.missionSoundsEnabled,
     };
 
     this.applyGainValues(false);
@@ -395,6 +401,19 @@ export class AudioManager {
   public playGemCollect(): void {
     const ready = this.canPlaySfx(false);
     if (ready) this.soundGen.playGemCollect(ready.ctx, ready.out);
+  }
+
+  public playMissionComplete(): void {
+    if (this.config.missionSoundsEnabled === false) return;
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playMissionComplete(ready.ctx, ready.out);
+  }
+
+  public playMissionClaim(): void {
+    if (this.config.missionSoundsEnabled === false) return;
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playMissionClaim(ready.ctx, ready.out);
   }
 }
 

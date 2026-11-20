@@ -28,6 +28,11 @@ export interface GameSettings {
   collectiblesEnabled: boolean;
   powerUpFrequency: PowerUpFrequencySetting;
   visualEffectsQuality: VisualEffectsQuality;
+  missionNotificationsEnabled: boolean;
+  missionSoundsEnabled: boolean;
+  missionRewardAnimationEnabled: boolean;
+  reducedMotion: boolean;
+  missionReminderEnabled: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'flappy_face_settings';
@@ -60,6 +65,11 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   collectiblesEnabled: true,
   powerUpFrequency: 'normal',
   visualEffectsQuality: INITIAL_PRESET === 'low' ? 'low' : INITIAL_PRESET,
+  missionNotificationsEnabled: true,
+  missionSoundsEnabled: true,
+  missionRewardAnimationEnabled: true,
+  reducedMotion: false,
+  missionReminderEnabled: true,
 };
 
 function clamp01(val: unknown, fallback: number): number {
@@ -148,6 +158,7 @@ export class SettingsManager {
       musicEnabled: this.settings.musicEnabled,
       sfxEnabled: this.settings.sfxEnabled,
       ambientEnabled: this.settings.ambientSoundEnabled,
+      missionSoundsEnabled: this.settings.missionSoundsEnabled,
     });
     vibrationManager.setEnabled(this.settings.vibrationEnabled);
   }
@@ -241,6 +252,26 @@ export class SettingsManager {
           parsed.visualEffectsQuality === 'high'
             ? parsed.visualEffectsQuality
             : DEFAULT_GAME_SETTINGS.visualEffectsQuality,
+        missionNotificationsEnabled:
+          typeof parsed.missionNotificationsEnabled === 'boolean'
+            ? parsed.missionNotificationsEnabled
+            : DEFAULT_GAME_SETTINGS.missionNotificationsEnabled,
+        missionSoundsEnabled:
+          typeof parsed.missionSoundsEnabled === 'boolean'
+            ? parsed.missionSoundsEnabled
+            : DEFAULT_GAME_SETTINGS.missionSoundsEnabled,
+        missionRewardAnimationEnabled:
+          typeof parsed.missionRewardAnimationEnabled === 'boolean'
+            ? parsed.missionRewardAnimationEnabled
+            : DEFAULT_GAME_SETTINGS.missionRewardAnimationEnabled,
+        reducedMotion:
+          typeof parsed.reducedMotion === 'boolean'
+            ? parsed.reducedMotion
+            : DEFAULT_GAME_SETTINGS.reducedMotion,
+        missionReminderEnabled:
+          typeof parsed.missionReminderEnabled === 'boolean'
+            ? parsed.missionReminderEnabled
+            : DEFAULT_GAME_SETTINGS.missionReminderEnabled,
       };
     } catch {
       return { ...DEFAULT_GAME_SETTINGS };

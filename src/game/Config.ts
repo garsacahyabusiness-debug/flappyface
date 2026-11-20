@@ -7,6 +7,7 @@ export type GameState =
   | 'CHARACTER_EDITOR'
   | 'LEADERBOARD'
   | 'ACHIEVEMENTS'
+  | 'MISSION_CENTER'
   | 'STATS'
   | 'SETTINGS'
   | 'ABOUT'

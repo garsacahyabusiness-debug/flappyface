@@ -30,6 +30,13 @@ export class PowerUpEffectManager {
   public runGemsCollected = 0;
 
   public reset(): void {
+    this.clearActiveEffects();
+    this.runPowerUpsCollected = 0;
+    this.runCoinsCollected = 0;
+    this.runGemsCollected = 0;
+  }
+
+  public clearActiveEffects(): void {
     this.hasShield = false;
     this.hasReviveCharge = false;
     this.revivedThisRun = false;
@@ -38,9 +45,6 @@ export class PowerUpEffectManager {
     this.scoreBoostRemaining = 0;
     this.featherRemaining = 0;
     this.invulnerableRemaining = 0;
-    this.runPowerUpsCollected = 0;
-    this.runCoinsCollected = 0;
-    this.runGemsCollected = 0;
   }
 
   public activate(id: PowerUpId): { activated: boolean; refreshed: boolean } {

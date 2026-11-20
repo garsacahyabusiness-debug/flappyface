@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Bell,
   Camera,
   Check,
   CloudRain,
@@ -652,6 +653,112 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                 >
                   {settings.visualEffectsQuality}
                 </button>
+              </div>
+            </div>
+          </section>
+
+          {/* MISSIONS & ACCESSIBILITY SECTION */}
+          <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
+            <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">
+              MISSIONS &amp; ACCESSIBILITY
+            </h3>
+
+            <div className="mt-2.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Bell className="h-4 w-4 text-[#32B85C]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    MISSION NOTIFICATION
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.missionNotificationsEnabled}
+                  label="Toggle Mission Notifications"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      missionNotificationsEnabled: !settings.missionNotificationsEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Volume2 className="h-4 w-4 text-[#3998F7]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">MISSION SOUND</span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.missionSoundsEnabled}
+                  disabled={!audioSupported || !settings.sfxEnabled}
+                  label="Toggle Mission Sounds"
+                  onToggle={() => {
+                    audioManager.unlock();
+                    const next = !settings.missionSoundsEnabled;
+                    settingsManager.update({ missionSoundsEnabled: next });
+                    if (next) audioManager.playButton();
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#F59E0B]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">REWARD ANIMATION</span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.missionRewardAnimationEnabled}
+                  label="Toggle Reward Animation"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      missionRewardAnimationEnabled: !settings.missionRewardAnimationEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Gauge className="h-4 w-4 text-[#9333EA]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">REDUCED MOTION</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Kurangi animasi &amp; efek gerak
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.reducedMotion}
+                  label="Toggle Reduced Motion"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ reducedMotion: !settings.reducedMotion });
+                    onEnvironmentChange?.();
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Bell className="h-4 w-4 text-[#FF6B6B]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">MISSION REMINDER</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Tampilkan badge hadiah siap klaim
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.missionReminderEnabled}
+                  label="Toggle Mission Reminder"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      missionReminderEnabled: !settings.missionReminderEnabled,
+                    });
+                  }}
+                />
               </div>
             </div>
           </section>

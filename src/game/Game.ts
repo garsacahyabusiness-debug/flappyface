@@ -2,7 +2,7 @@ import { audioManager } from './audio/AudioManager';
 import { Background } from './Background';
 import { characterFavorites } from './character/CharacterFavorites';
 import { CharacterRandomizer, characterRandomizer } from './character/CharacterRandomizer';
-import { CharacterDefinition } from './character/CharacterRegistry';
+import { CharacterDefinition, getCharacterById } from './character/CharacterRegistry';
 import { characterSkinManager, SkinId } from './character/CharacterSkinManager';
 import { CharacterSlot } from './character/CharacterStorage';
 import { CharacterMetrics, characterUnlockManager } from './character/CharacterUnlockManager';
@@ -11,12 +11,13 @@ import { GAME_CONFIG, GameState } from './Config';
 import { GameOverReaction, gameOverReactionSystem } from './GameOverReaction';
 import { Ground } from './Ground';
 import { Input } from './Input';
+import { missionManager } from './missions/MissionManager';
 import { Physics } from './Physics';
 import { PipeManager } from './PipeManager';
 import { Player } from './Player';
 import { currencyManager } from './powerups/CurrencyManager';
 import { ActivePowerUpStatus } from './powerups/PowerUpEffectManager';
-import { PowerUpBannerEvent, PowerUpManager } from './powerups/PowerUpManager';
+import { PowerUpBannerEvent, powerUpManager, PowerUpManager } from './powerups/PowerUpManager';
 import { achievementManager, AchievementRecord } from './progression/AchievementManager';
 import { DifficultyTierId } from './progression/DifficultyConfig';
 import { difficultyManager } from './progression/DifficultyManager';
@@ -84,7 +85,7 @@ export class Game {
   private collision: Collision;
   private score: Score;
   private input: Input;
-  public readonly powerUps = new PowerUpManager();
+  public readonly powerUps: PowerUpManager = powerUpManager;
 
   private state: GameState = 'MAIN_MENU';
   private pausedFromState: 'PLAYING' | 'PLAYER_1_PLAYING' | 'PLAYER_2_PLAYING' = 'PLAYING';
@@ -118,13 +119,18 @@ export class Game {
   private performanceMode: PerformanceMode = 'high';
   private adaptiveLowDetail = false;
   private reducedMotion = false;
+  private osReducedMotion = false;
+  private runCollided = false;
+  private runUsedShield = false;
+  private runUsedSecondChance = false;
   private fpsSampleFrames = 0;
   private fpsSampleElapsed = 0;
   private lowFpsStreak = 0;
   private highFpsStreak = 0;
   private motionMediaQuery: MediaQueryList | null = null;
   private handleMotionChange = (e: MediaQueryListEvent) => {
-    this.applyReducedMotion(e.matches);
+    this.osReducedMotion = e.matches;
+    this.applyReducedMotion(this.osReducedMotion || settingsManager.getSettings().reducedMotion);
   };
 
   constructor(
@@ -169,9 +175,13 @@ export class Game {
   }
 
   private initReducedMotionObserver(): void {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      this.applyReducedMotion(settingsManager.getSettings().reducedMotion);
+      return;
+    }
     this.motionMediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    this.applyReducedMotion(this.motionMediaQuery.matches);
+    this.osReducedMotion = this.motionMediaQuery.matches;
+    this.applyReducedMotion(this.osReducedMotion || settingsManager.getSettings().reducedMotion);
     this.motionMediaQuery.addEventListener?.('change', this.handleMotionChange);
   }
 
@@ -179,6 +189,30 @@ export class Game {
     this.reducedMotion = reduced;
     this.renderer.setReducedMotion(reduced);
     this.background.setReducedMotion(reduced);
+  }
+
+  private getActiveMissionContext(slot: PlayerSlot | null) {
+    const charSlot: CharacterSlot = slot === 1 ? 'player1' : slot === 2 ? 'player2' : 'default';
+    const sel = characterUnlockManager.getSelection(charSlot);
+    const charDef = getCharacterById(sel.characterId);
+    const mode = this.twoPlayerMatch ? this.twoPlayerMatch.format : ('solo' as const);
+    return {
+      mode,
+      playerSlot: slot,
+      worldId: worldUnlockManager.getSelectedWorldId(),
+      characterId: sel.characterId,
+      characterRarity: charDef.rarity,
+    };
+  }
+
+  private beginRunMissionTracking(slot: PlayerSlot | null): void {
+    this.runCollided = false;
+    this.runUsedShield = false;
+    this.runUsedSecondChance = false;
+    const ctx = this.getActiveMissionContext(slot);
+    missionManager.emitEvent({ type: 'game_started', ...ctx });
+    missionManager.emitEvent({ type: 'world_played', ...ctx });
+    missionManager.emitEvent({ type: 'character_used', ...ctx });
   }
 
   private syncDetailLevel(): void {
@@ -361,6 +395,7 @@ export class Game {
     this.ground.setWorldTheme(world.id);
     this.pipes.setPipeSkin(world.pipeSkin);
     audioManager.setAmbientType(world.ambientSound);
+    this.applyReducedMotion(this.osReducedMotion || settings.reducedMotion);
     this.syncBackgroundSkyTheme();
 
     // Sync Power-Up & Collectible config; enforce standardized 'normal' frequency in 2P/Tournament
@@ -479,6 +514,7 @@ export class Game {
       | 'CHARACTER_EDITOR'
       | 'LEADERBOARD'
       | 'ACHIEVEMENTS'
+      | 'MISSION_CENTER'
       | 'STATS'
       | 'SETTINGS'
       | 'ABOUT'
@@ -594,6 +630,13 @@ export class Game {
     this.pendingWorldUnlocks = [];
     this.applyRandomizerForSlot('player1');
     this.applyRandomizerForSlot('player2');
+    if (format === 'bo3' || format === 'bo5') {
+      missionManager.emitEvent({
+        type: 'tournament_started',
+        mode: format,
+        worldId: worldUnlockManager.getSelectedWorldId(),
+      });
+    }
     this.beginTwoPlayerRound(1);
     return true;
   }
@@ -641,6 +684,30 @@ export class Game {
       let finalized = updatedMatch;
       if (!finalized.recordedToHistory) {
         leaderboardManager.recordCompletedMatch(finalized);
+        const worldId = worldUnlockManager.getSelectedWorldId();
+        missionManager.emitEvent({
+          type: 'multiplayer_played',
+          mode: finalized.format,
+          winner: finalized.winner ?? undefined,
+          worldId,
+        });
+        if (finalized.winner && finalized.winner !== 'draw') {
+          if (finalized.format === 'bo3' || finalized.format === 'bo5') {
+            missionManager.emitEvent({
+              type: 'tournament_won',
+              mode: finalized.format,
+              winner: finalized.winner,
+              worldId,
+            });
+          } else {
+            missionManager.emitEvent({
+              type: 'match_won',
+              mode: finalized.format,
+              winner: finalized.winner,
+              worldId,
+            });
+          }
+        }
         finalized = { ...finalized, recordedToHistory: true };
       }
       this.twoPlayerMatch = finalized;
@@ -787,6 +854,7 @@ export class Game {
     const slot = this.reviveFromSlot;
     this.reviveFromSlot = null;
     this.reviveTimer = 0;
+    this.runUsedSecondChance = true;
     this.state =
       slot === 1
         ? 'PLAYER_1_PLAYING'
@@ -833,6 +901,7 @@ export class Game {
 
     if (this.state === 'READY') {
       this.state = 'PLAYING';
+      this.beginRunMissionTracking(null);
       this.physics.applyFlap(this.player);
       const trail = this.player.getTrailStyle();
       this.renderer.particles.spawnFlapPuff(this.player.x, this.player.y, trail.colors, trail.kind);
@@ -929,6 +998,7 @@ export class Game {
     if (this.countdownElapsed >= COUNTDOWN_GO_END_SECONDS) {
       this.countdownStep = null;
       this.state = nextPlayingState;
+      this.beginRunMissionTracking(nextPlayingState === 'PLAYER_1_PLAYING' ? 1 : 2);
       this.emitUIState();
       return;
     }
@@ -967,9 +1037,12 @@ export class Game {
 
   private triggerGameOver(reason: 'pipe' | 'ground' | 'ceiling', slot: PlayerSlot | null): void {
     this.player.isDead = true;
+    this.runCollided = true;
     this.player.vy = reason === 'ground' ? 0 : -110;
     this.deathElapsed = 0;
     this.gameOverPanelShown = false;
+    this.latestPowerUpBanner = null;
+    this.powerUps.cleanupOnGameEnd();
     this.currentGameOverReaction = gameOverReactionSystem.pickReaction(this.score.current);
     this.renderer.triggerCollisionEffect(this.player.x, this.player.y);
     audioManager.stopMusic();
@@ -1000,6 +1073,15 @@ export class Game {
       this.evaluateWorldUnlocks(true);
     }
 
+    missionManager.emitEvent({
+      type: 'game_finished',
+      ...this.getActiveMissionContext(slot),
+      score: this.score.current,
+      collidedThisRun: this.runCollided,
+      usedShieldThisRun: this.runUsedShield,
+      usedSecondChanceThisRun: this.runUsedSecondChance,
+    });
+
     this.emitUIState();
   }
 
@@ -1011,6 +1093,23 @@ export class Game {
     if (spawnBurst) {
       this.renderer.particles.spawnScoreBurst(this.player.x, this.player.y);
     }
+
+    const missionCtx = this.getActiveMissionContext(slot);
+    if (spawnBurst) {
+      missionManager.emitEvent({
+        type: 'pipe_passed',
+        ...missionCtx,
+        amount: 1,
+      });
+    }
+    missionManager.emitEvent({
+      type: 'score_reached',
+      ...missionCtx,
+      score: this.score.current,
+      collidedThisRun: this.runCollided,
+      usedShieldThisRun: this.runUsedShield,
+      usedSecondChanceThisRun: this.runUsedSecondChance,
+    });
 
     if (slot === null) {
       statsManager.recordPipePassed(this.score.current);
@@ -1071,6 +1170,39 @@ export class Game {
       this.checkPowerUpAchievements();
     }
 
+    const missionCtx = this.getActiveMissionContext(slot);
+    if (powerUpOut.coinsEarned > 0) {
+      missionManager.emitEvent({
+        type: 'coin_collected',
+        ...missionCtx,
+        amount: powerUpOut.coinsEarned,
+      });
+    }
+    if (powerUpOut.starsCollected > 0) {
+      missionManager.emitEvent({
+        type: 'star_collected',
+        ...missionCtx,
+        amount: powerUpOut.starsCollected,
+      });
+    }
+    if (powerUpOut.gemsEarned > 0) {
+      missionManager.emitEvent({
+        type: 'gem_collected',
+        ...missionCtx,
+        amount: powerUpOut.gemsEarned,
+      });
+    }
+    for (const pId of powerUpOut.collectedPowerUpIds) {
+      if (pId === 'shield') {
+        this.runUsedShield = true;
+      }
+      missionManager.emitEvent({
+        type: 'powerup_used',
+        ...missionCtx,
+        powerUpId: pId,
+      });
+    }
+
     let bonusNewBest = false;
     if (powerUpOut.bonusScoreEarned > 0 && !this.player.isDead) {
       const bonusRes = this.score.addBonus(powerUpOut.bonusScoreEarned, this.player.isDead);
@@ -1086,6 +1218,7 @@ export class Game {
     const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
     const result = this.collision.check(this.player, this.pipes.getPipes(), groundY);
     if (result.collided) {
+      this.runCollided = true;
       const reason = result.reason ?? 'pipe';
       const hitResolution = this.powerUps.handleCollision(
         reason,
@@ -1094,6 +1227,7 @@ export class Game {
         this.renderer.particles
       );
       if (hitResolution.shieldBroken) {
+        this.runUsedShield = true;
         this.checkPowerUpAchievements();
       }
       if (hitResolution.survived) {
@@ -1175,6 +1309,7 @@ export class Game {
       this.state === 'CHARACTER_EDITOR' ||
       this.state === 'LEADERBOARD' ||
       this.state === 'ACHIEVEMENTS' ||
+      this.state === 'MISSION_CENTER' ||
       this.state === 'STATS' ||
       this.state === 'SETTINGS' ||
       this.state === 'ABOUT' ||
