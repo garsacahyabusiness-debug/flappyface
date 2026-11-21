@@ -1,10 +1,12 @@
 import React from 'react';
 import { Crown, Flame, Home, RotateCcw, Trophy, Users } from 'lucide-react';
+import { AchievementRecord } from '../game/achievements/AchievementTypes';
 import { audioManager } from '../game/audio/AudioManager';
 import { getCharacterById } from '../game/character/CharacterRegistry';
 import { SkinId } from '../game/character/CharacterSkinManager';
 import { pickMatchOutcomeReaction } from '../game/GameOverReaction';
 import { MATCH_FORMAT_CONFIG, TwoPlayerMatchData } from '../game/TwoPlayerMatch';
+import { AchievementShowcaseStrip } from './AchievementShowcaseStrip';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 
 interface MatchResultOverlayProps {
@@ -20,6 +22,7 @@ interface MatchResultOverlayProps {
   player2Level?: number;
   player2Title?: string;
   winnerWinStreak?: number;
+  showcaseRecords?: AchievementRecord[];
   onRematch: () => void;
   onChangePlayer: () => void;
   onMainMenu: () => void;
@@ -38,6 +41,7 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
   player2Level = 1,
   player2Title = 'Newbie Flyer',
   winnerWinStreak = 0,
+  showcaseRecords = [],
   onRematch,
   onChangePlayer,
   onMainMenu,
@@ -215,6 +219,14 @@ export const MatchResultOverlay: React.FC<MatchResultOverlayProps> = ({
               </span>
             ))}
           </div>
+        )}
+
+        {showcaseRecords.length > 0 && (
+          <AchievementShowcaseStrip
+            records={showcaseRecords}
+            compact={true}
+            className="mt-2"
+          />
         )}
 
         {/* Actions: REMATCH / CHANGE PLAYER / MAIN MENU */}

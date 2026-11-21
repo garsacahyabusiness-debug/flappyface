@@ -52,4 +52,36 @@ export class Collision {
 
     return { collided: false, reason: null };
   }
+
+  /**
+   * Read-only proximity check for Near-Miss skill tracking.
+   * Never alters collision hitboxes or physics.
+   */
+  public findNearMissPipeIds(
+    player: Player,
+    pipes: Pipe[],
+    groundY: number,
+    thresholdPx = 7.5
+  ): number[] {
+    const r = player.collisionRadius;
+    const hitIds: number[] = [];
+
+    for (const pipe of pipes) {
+      if (player.x + r < pipe.x || player.x - r > pipe.x + pipe.width) {
+        continue;
+      }
+      const gapTop = pipe.gapY - pipe.gapHeight / 2;
+      const gapBottom = pipe.gapY + pipe.gapHeight / 2;
+      if (gapBottom >= groundY) continue;
+
+      const distToTop = player.y - r - gapTop;
+      const distToBottom = gapBottom - (player.y + r);
+      const minClearance = Math.min(distToTop, distToBottom);
+      if (minClearance >= 0 && minClearance <= thresholdPx) {
+        hitIds.push(pipe.id);
+      }
+    }
+
+    return hitIds;
+  }
 }

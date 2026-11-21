@@ -1,10 +1,12 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
+import { AchievementRecord } from '../game/achievements/AchievementTypes';
 import { audioManager } from '../game/audio/AudioManager';
 import { getCharacterById } from '../game/character/CharacterRegistry';
 import { SkinId } from '../game/character/CharacterSkinManager';
 import { GameOverReaction } from '../game/GameOverReaction';
 import { PlayerSlot } from '../game/TwoPlayerMatch';
+import { AchievementShowcaseStrip } from './AchievementShowcaseStrip';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 
 interface TwoPlayerGameOverOverlayProps {
@@ -17,6 +19,7 @@ interface TwoPlayerGameOverOverlayProps {
   characterId?: string;
   skinId?: SkinId;
   customFaceImg?: HTMLImageElement | null;
+  showcaseRecords?: AchievementRecord[];
   onContinue: () => void;
 }
 
@@ -30,6 +33,7 @@ export const TwoPlayerGameOverOverlay: React.FC<TwoPlayerGameOverOverlayProps> =
   characterId = 'classic_bird',
   skinId = 'default',
   customFaceImg = null,
+  showcaseRecords = [],
   onContinue,
 }) => {
   const activeChar = getCharacterById(characterId);
@@ -93,6 +97,13 @@ export const TwoPlayerGameOverOverlay: React.FC<TwoPlayerGameOverOverlayProps> =
           >
             {score}
           </div>
+          {showcaseRecords.length > 0 && (
+            <AchievementShowcaseStrip
+              records={showcaseRecords}
+              compact={true}
+              className="mt-2"
+            />
+          )}
         </div>
 
         <button

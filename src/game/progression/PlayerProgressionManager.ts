@@ -713,8 +713,15 @@ export class PlayerProgressionManager {
 
   // ---- Collection, Mission, Achievement & Tournament XP ----
 
-  public recordAchievementXP(achievementId: string, achievementName: string): AwardXPResult {
-    const xp = ACHIEVEMENT_XP_MAP[achievementId] ?? 50;
+  public recordAchievementXP(
+    achievementId: string,
+    achievementName: string,
+    xpAmount?: number
+  ): AwardXPResult {
+    const xp =
+      typeof xpAmount === 'number' && Number.isFinite(xpAmount) && xpAmount > 0
+        ? Math.floor(xpAmount)
+        : (ACHIEVEMENT_XP_MAP[achievementId] ?? 50);
     if (achievementId === 'power_user') {
       this.unlockTitle('power_user', 'solo');
     }

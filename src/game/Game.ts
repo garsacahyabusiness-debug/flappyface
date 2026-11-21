@@ -130,6 +130,18 @@ export class Game {
   private runPipeCount = 0;
   private runXPGained = 0;
   private runSeq = 0;
+  private readyWaitElapsed = 0;
+  private runStartElapsedSec = 0;
+  private runDidPause = false;
+  private runScoreAtPause = 0;
+  private runUsedPowerUp = false;
+  private runPowerUpsCollected = 0;
+  private runShieldSaves = 0;
+  private runReviveBaseScore = 0;
+  private runMagnetCollects = 0;
+  private runStarsInRun = 0;
+  private runNearMissPipeIds = new Set<number>();
+  private runPrevBestScore = 0;
   private fpsSampleFrames = 0;
   private fpsSampleElapsed = 0;
   private lowFpsStreak = 0;
@@ -216,12 +228,46 @@ export class Game {
     return slot === 1 ? 'player1' : slot === 2 ? 'player2' : 'solo';
   }
 
+  private notifyAchievements(unlocked: AchievementRecord[]): void {
+    if (unlocked.length > 0 && this.onAchievementsUnlocked) {
+      this.onAchievementsUnlocked(unlocked);
+    }
+  }
+
+  public recordMenuVisit(menuId: string): void {
+    const unlocked = achievementManager.recordMenuVisit(menuId);
+    this.notifyAchievements(unlocked);
+  }
+
+  private isSlotUsingCustomFace(charSlot: CharacterSlot): boolean {
+    const sel = characterUnlockManager.getSelection(charSlot);
+    const faceImg =
+      charSlot === 'player1'
+        ? this.player1FaceImg
+        : charSlot === 'player2'
+          ? this.player2FaceImg
+          : this.defaultFaceImg;
+    return sel.mode === 'custom_face' && Boolean(faceImg);
+  }
+
   private beginRunMissionTracking(slot: PlayerSlot | null): void {
     this.runCollided = false;
     this.runUsedShield = false;
     this.runUsedSecondChance = false;
     this.runPipeCount = 0;
     this.runXPGained = 0;
+    this.runUsedPowerUp = false;
+    this.runPowerUpsCollected = 0;
+    this.runShieldSaves = 0;
+    this.runReviveBaseScore = 0;
+    this.runMagnetCollects = 0;
+    this.runStarsInRun = 0;
+    this.runDidPause = false;
+    this.runScoreAtPause = 0;
+    this.runNearMissPipeIds.clear();
+    this.runStartElapsedSec = this.elapsedTime;
+    this.runPrevBestScore = this.score.best;
+
     this.runSeq += 1;
     this.activeRunId = `${Date.now()}-${this.runSeq}`;
     const ctx = this.getActiveMissionContext(slot);
@@ -236,6 +282,29 @@ export class Game {
       ctx.worldId
     );
     this.runXPGained += startXpRes.amount;
+
+    const charSlot: CharacterSlot = slot === 1 ? 'player1' : slot === 2 ? 'player2' : 'default';
+    const skinId = characterSkinManager.getSelectedSkin(charSlot);
+    const weather = worldUnlockManager.getEffectiveWeather(
+      ctx.worldId,
+      settingsManager.getSettings().weatherEnabled
+    );
+    const nowDate = new Date();
+    const day = nowDate.getDay();
+    this.notifyAchievements(
+      achievementManager.recordEvent({
+        type: 'game_started',
+        mode: ctx.mode,
+        characterId: ctx.characterId,
+        skinId,
+        worldId: ctx.worldId,
+        weather,
+        isCustomFace: this.isSlotUsingCustomFace(charSlot),
+        localHour: nowDate.getHours(),
+        isWeekend: day === 0 || day === 6,
+        readyWaitSeconds: this.readyWaitElapsed,
+      })
+    );
   }
 
   private syncDetailLevel(): void {
@@ -358,8 +427,16 @@ export class Game {
 
   private evaluateCharacterUnlocks(queuePopup: boolean): void {
     const unlocked = characterUnlockManager.evaluateProgress(this.getUnlockMetrics());
-    if (queuePopup && unlocked.length > 0) {
-      this.pendingCharacterUnlocks.push(...unlocked);
+    if (unlocked.length > 0) {
+      if (queuePopup) {
+        this.pendingCharacterUnlocks.push(...unlocked);
+      }
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'character_unlocked',
+          unlockedCount: characterUnlockManager.getUnlockedIds().length,
+        })
+      );
     }
   }
 
@@ -372,8 +449,16 @@ export class Game {
     if (worldSummary.hasSkinReward) {
       characterSkinManager.unlockMilestoneSkin('golden');
     }
-    if (queuePopup && unlocked.length > 0) {
-      this.pendingWorldUnlocks.push(...unlocked);
+    if (unlocked.length > 0) {
+      if (queuePopup) {
+        this.pendingWorldUnlocks.push(...unlocked);
+      }
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'world_unlocked',
+          unlockedCount: worldUnlockManager.getUnlockedIds().length,
+        })
+      );
     }
   }
 
@@ -548,6 +633,7 @@ export class Game {
   ): void {
     playerProgressionManager.flushPlayTime();
     this.state = next;
+    this.recordMenuVisit(next);
     if (next === 'MAIN_MENU') {
       this.pausedFromState = 'PLAYING';
       this.reviveFromSlot = null;
@@ -620,6 +706,7 @@ export class Game {
     this.ground.reset();
     this.renderer.resetEffects();
     this.deathElapsed = 0;
+    this.readyWaitElapsed = 0;
     this.countdownElapsed = 0;
     this.countdownStep = null;
     this.gameOverPanelShown = false;
@@ -742,6 +829,48 @@ export class Game {
             });
           }
         }
+
+        const bestCombinedRound = finalized.rounds.reduce(
+          (max, r) => Math.max(max, r.player1Score + r.player2Score),
+          (finalized.player1Score ?? 0) + (finalized.player2Score ?? 0)
+        );
+        this.notifyAchievements(
+          achievementManager.recordEvent({
+            type: 'multiplayer_played',
+            format: finalized.format,
+            winner: finalized.winner ?? 'draw',
+            combinedScore: bestCombinedRound,
+          })
+        );
+        if (finalized.format === 'bo3' || finalized.format === 'bo5') {
+          const champ = finalized.winner;
+          const won = champ === 'player1' || champ === 'player2';
+          let cleanSweep = false;
+          let comebackWin = false;
+          if (won) {
+            cleanSweep = finalized.rounds.every((r) => r.winner === champ);
+            let p1Lead = 0;
+            let p2Lead = 0;
+            for (const r of finalized.rounds) {
+              if (r.winner === 'player1') p1Lead += 1;
+              else if (r.winner === 'player2') p2Lead += 1;
+              if ((champ === 'player1' && p2Lead > p1Lead) || (champ === 'player2' && p1Lead > p2Lead)) {
+                comebackWin = true;
+              }
+            }
+          }
+          this.notifyAchievements(
+            achievementManager.recordEvent({
+              type: 'tournament_completed',
+              format: finalized.format,
+              won,
+              winner: finalized.winner ?? 'draw',
+              cleanSweep,
+              comebackWin,
+            })
+          );
+        }
+
         finalized = { ...finalized, recordedToHistory: true };
       }
       this.twoPlayerMatch = finalized;
@@ -849,6 +978,8 @@ export class Game {
       this.state === 'PLAYER_2_PLAYING'
     ) {
       this.pausedFromState = this.state;
+      this.runDidPause = true;
+      this.runScoreAtPause = this.score.current;
       this.state = 'PAUSED';
       audioManager.pauseGameplayAudio();
       this.emitUIState();
@@ -889,6 +1020,7 @@ export class Game {
     this.reviveFromSlot = null;
     this.reviveTimer = 0;
     this.runUsedSecondChance = true;
+    this.runReviveBaseScore = this.score.current;
     this.state =
       slot === 1
         ? 'PLAYER_1_PLAYING'
@@ -897,6 +1029,7 @@ export class Game {
           : 'PLAYING';
     audioManager.resumeGameplayAudio();
     this.checkPowerUpAchievements();
+    this.notifyAchievements(achievementManager.recordEvent({ type: 'revive_used' }));
     this.emitUIState();
   }
 
@@ -1130,6 +1263,34 @@ export class Game {
       usedSecondChanceThisRun: this.runUsedSecondChance,
     });
 
+    const ctx = this.getActiveMissionContext(slot);
+    const charSlot: CharacterSlot = slot === 1 ? 'player1' : slot === 2 ? 'player2' : 'default';
+    this.notifyAchievements(
+      achievementManager.recordEvent({
+        type: 'game_completed',
+        mode: ctx.mode,
+        score: this.score.current,
+        pipes: this.runPipeCount,
+        elapsedSeconds: Math.max(0, this.elapsedTime - this.runStartElapsedSec),
+        reason,
+        characterId: ctx.characterId,
+        worldId: ctx.worldId,
+        isCustomFace: this.isSlotUsingCustomFace(charSlot),
+        usedPowerUp: this.runUsedPowerUp,
+        usedShield: this.runUsedShield,
+        usedSecondChance: this.runUsedSecondChance,
+        shieldSavesInRun: this.runShieldSaves,
+        scoreAfterRevive: this.runUsedSecondChance
+          ? Math.max(0, this.score.current - this.runReviveBaseScore)
+          : 0,
+        coinsInRun: runCoins,
+        starsInRun: this.runStarsInRun,
+        gemsInRun: runGems,
+        didPauseAndScore5: this.runDidPause && this.score.current - this.runScoreAtPause >= 5,
+        localHour: new Date().getHours(),
+      })
+    );
+
     this.emitUIState();
   }
 
@@ -1180,6 +1341,27 @@ export class Game {
       usedSecondChanceThisRun: this.runUsedSecondChance,
     });
 
+    if (spawnBurst) {
+      this.notifyAchievements(achievementManager.recordEvent({ type: 'pipe_passed', count: 1 }));
+    }
+
+    const charSlot: CharacterSlot = slot === 1 ? 'player1' : slot === 2 ? 'player2' : 'default';
+    this.notifyAchievements(
+      achievementManager.recordEvent({
+        type: 'score_updated',
+        score: this.score.current,
+        mode: missionCtx.mode,
+        usedPowerUp: this.runUsedPowerUp,
+        usedShield: this.runUsedShield,
+        usedSecondChance: this.runUsedSecondChance,
+        coinsInRun: this.powerUps.effects.runCoinsCollected,
+        nearMissCountInRun: this.runNearMissPipeIds.size,
+        characterId: missionCtx.characterId,
+        worldId: missionCtx.worldId,
+        isCustomFace: this.isSlotUsingCustomFace(charSlot),
+      })
+    );
+
     if (slot === null) {
       statsManager.recordPipePassed(this.score.current);
 
@@ -1189,6 +1371,15 @@ export class Game {
       }
 
       if (newBestTriggered) {
+        this.notifyAchievements(
+          achievementManager.recordEvent({
+            type: 'high_score_updated',
+            newBest: this.score.best,
+            previousBest: this.runPrevBestScore,
+          })
+        );
+        this.runPrevBestScore = this.score.best;
+
         const bestXp = playerProgressionManager.recordPersonalBestXP(
           'solo',
           this.activeRunId,
@@ -1253,13 +1444,26 @@ export class Game {
         ...missionCtx,
         amount: powerUpOut.coinsEarned,
       });
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'coin_collected',
+          amount: powerUpOut.coinsEarned,
+        })
+      );
     }
     if (powerUpOut.starsCollected > 0) {
+      this.runStarsInRun += powerUpOut.starsCollected;
       missionManager.emitEvent({
         type: 'star_collected',
         ...missionCtx,
         amount: powerUpOut.starsCollected,
       });
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'star_collected',
+          amount: powerUpOut.starsCollected,
+        })
+      );
     }
     if (powerUpOut.gemsEarned > 0) {
       missionManager.emitEvent({
@@ -1267,8 +1471,26 @@ export class Game {
         ...missionCtx,
         amount: powerUpOut.gemsEarned,
       });
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'gem_collected',
+          amount: powerUpOut.gemsEarned,
+        })
+      );
+    }
+    if (powerUpOut.magnetCollectCount > 0) {
+      this.runMagnetCollects += powerUpOut.magnetCollectCount;
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'magnet_collect',
+          count: powerUpOut.magnetCollectCount,
+          inRunTotal: this.runMagnetCollects,
+        })
+      );
     }
     for (const pId of powerUpOut.collectedPowerUpIds) {
+      this.runUsedPowerUp = true;
+      this.runPowerUpsCollected += 1;
       if (pId === 'shield') {
         this.runUsedShield = true;
       }
@@ -1277,6 +1499,13 @@ export class Game {
         ...missionCtx,
         powerUpId: pId,
       });
+      this.notifyAchievements(
+        achievementManager.recordEvent({
+          type: 'powerup_used',
+          powerUpId: pId,
+          inRunCount: this.runPowerUpsCollected,
+        })
+      );
     }
 
     let bonusNewBest = false;
@@ -1292,6 +1521,25 @@ export class Game {
 
     // Check collision BEFORE pipe pass scoring so fatal frames never award extra points
     const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
+    const nearMissIds = this.collision.findNearMissPipeIds(
+      this.player,
+      this.pipes.getPipes(),
+      groundY,
+      7.5
+    );
+    for (const pipeId of nearMissIds) {
+      if (!this.runNearMissPipeIds.has(pipeId)) {
+        this.runNearMissPipeIds.add(pipeId);
+        this.notifyAchievements(
+          achievementManager.recordEvent({
+            type: 'near_miss',
+            count: 1,
+            inRunTotal: this.runNearMissPipeIds.size,
+          })
+        );
+      }
+    }
+
     const result = this.collision.check(this.player, this.pipes.getPipes(), groundY);
     if (result.collided) {
       this.runCollided = true;
@@ -1304,7 +1552,9 @@ export class Game {
       );
       if (hitResolution.shieldBroken) {
         this.runUsedShield = true;
+        this.runShieldSaves += 1;
         this.checkPowerUpAchievements();
+        this.notifyAchievements(achievementManager.recordEvent({ type: 'shield_saved' }));
       }
       if (hitResolution.survived) {
         this.emitUIState();
@@ -1426,6 +1676,7 @@ export class Game {
     }
 
     if (this.state === 'READY') {
+      this.readyWaitElapsed += dt;
       this.background.update(dt, 0.55);
       this.ground.update(dt, 0.65);
       this.player.updateIdle(this.elapsedTime, dt);

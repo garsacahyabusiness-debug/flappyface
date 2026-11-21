@@ -1,24 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  ArrowRight,
   Award,
   Coins,
+  Compass,
   Crown,
+  Eye,
   Feather,
   Flame,
   Gem,
   Heart,
+  Medal,
   Shield,
+  ShoppingBag,
   Sparkles,
   Star,
+  Target,
   Trophy,
+  Users,
   Zap,
 } from 'lucide-react';
+import { ACHIEVEMENT_RARITY_CONFIG } from '../game/achievements/AchievementPointsManager';
+import { AchievementIconName, AchievementRecord } from '../game/achievements/AchievementTypes';
+import { getBadgeById } from '../game/achievements/BadgeRegistry';
 import { audioManager } from '../game/audio/AudioManager';
-import { AchievementIconName, AchievementRecord } from '../game/progression/AchievementManager';
+import { AVATAR_FRAME_META } from '../game/missions/MissionRegistry';
+import { getTitleById } from '../game/progression/TitleRegistry';
+import { vibrationManager } from '../game/settings/VibrationManager';
+import { BadgeArtwork } from './BadgeArtwork';
 
 interface AchievementPopupProps {
   queue: AchievementRecord[];
   onConsumeCurrent: () => void;
+  suppressed?: boolean;
+  enabled?: boolean;
+  animationEnabled?: boolean;
+  badgeEffectsEnabled?: boolean;
+  reducedMotion?: boolean;
 }
 
 export function renderAchievementIcon(icon: AchievementIconName, className = 'h-6 w-6') {
@@ -47,64 +65,198 @@ export function renderAchievementIcon(icon: AchievementIconName, className = 'h-
       return <Zap className={className} />;
     case 'star':
       return <Star className={className} />;
+    case 'compass':
+      return <Compass className={className} />;
+    case 'users':
+      return <Users className={className} />;
+    case 'target':
+      return <Target className={className} />;
+    case 'eye':
+      return <Eye className={className} />;
+    case 'shopping':
+      return <ShoppingBag className={className} />;
+    case 'medal':
+      return <Medal className={className} />;
+    default:
+      return <Trophy className={className} />;
   }
 }
 
 export const AchievementPopup: React.FC<AchievementPopupProps> = ({
   queue,
   onConsumeCurrent,
+  suppressed = false,
+  enabled = true,
+  animationEnabled = true,
+  badgeEffectsEnabled = true,
+  reducedMotion = false,
 }) => {
   const current = queue[0] ?? null;
-  const [phase, setPhase] = useState<'in' | 'out'>('in');
+  const lastSoundIdRef = useRef<string | null>(null);
 
+  // If achievement popups are disabled in Settings, consume queued items silently
   useEffect(() => {
-    if (!current) return;
-    setPhase('in');
-    audioManager.playAchievement();
-
-    const fadeTimer = window.setTimeout(() => {
-      setPhase('out');
-    }, 2350);
-
-    const removeTimer = window.setTimeout(() => {
+    if (!current) {
+      lastSoundIdRef.current = null;
+      return;
+    }
+    if (!enabled) {
       onConsumeCurrent();
-    }, 2750);
+    }
+  }, [current, enabled, onConsumeCurrent]);
 
-    return () => {
-      window.clearTimeout(fadeTimer);
-      window.clearTimeout(removeTimer);
-    };
-  }, [current?.id, onConsumeCurrent]);
+  // Play rarity unlock sound & haptic feedback once per revealed modal
+  useEffect(() => {
+    if (!current || suppressed || !enabled) return;
+    if (lastSoundIdRef.current === current.id) return;
+    lastSoundIdRef.current = current.id;
+    audioManager.playAchievementUnlock(current.rarity);
+    if (current.rarity === 'EPIC' || current.rarity === 'LEGENDARY') {
+      vibrationManager.vibrateVictory();
+    } else {
+      vibrationManager.vibrateScore();
+    }
+  }, [current, suppressed, enabled]);
 
-  if (!current) return null;
+  if (!current || suppressed || !enabled) return null;
+
+  const rarityStyle = ACHIEVEMENT_RARITY_CONFIG[current.rarity];
+  const badge = current.badgeId ? getBadgeById(current.badgeId) : null;
+  const titleDef = current.titleId ? getTitleById(current.titleId) : null;
+  const frameMeta = current.frameId ? AVATAR_FRAME_META[current.frameId] : null;
+  const useAnim = animationEnabled && !reducedMotion;
 
   return (
     <div
-      role="status"
-      aria-live="polite"
-      className={`pointer-events-none absolute top-3 left-1/2 z-40 w-[90%] max-w-[332px] -translate-x-1/2 transition-all duration-300 ${
-        phase === 'in'
-          ? 'translate-y-0 scale-100 opacity-100'
-          : '-translate-y-3 scale-95 opacity-0'
-      }`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Achievement Unlocked: ${current.name}`}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="anim-fade-in fixed inset-0 z-40 flex items-center justify-center bg-[#24415C]/55 p-4 backdrop-blur-[2px]"
     >
-      <div className="flex items-center gap-3 rounded-3xl border-[3px] border-[#24415C] bg-gradient-to-r from-[#FFFDF2] via-[#FFF6CE] to-[#FFE885] px-3.5 py-2.5 shadow-[0_6px_0_#24415C,0_0_24px_rgba(255,216,77,0.65)]">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border-2 border-[#24415C] bg-[#FFD84D] text-[#24415C] shadow-[0_2px_0_#24415C]">
-          {renderAchievementIcon(current.icon, 'h-6 w-6')}
+      <div
+        className={`game-panel relative w-full max-w-[330px] overflow-hidden border-[3px] border-[#24415C] bg-gradient-to-b from-white via-[#FFFDF2] to-[#FFF6CE] p-5 text-center ${
+          useAnim ? 'anim-panel-pop' : ''
+        }`}
+        style={{
+          boxShadow: `0 8px 0 #24415C, 0 0 30px ${rarityStyle.glowRgba}`,
+        }}
+      >
+        {/* Top Tag & Queue Counter */}
+        <div className="flex items-center justify-center gap-1.5">
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border-2 border-[#24415C] px-2.5 py-0.5 text-[10px] font-black tracking-wider uppercase ${rarityStyle.badgeBg} ${rarityStyle.badgeText}`}
+          >
+            <Trophy className="h-3 w-3 shrink-0" />
+            <span>
+              {current.hidden ? 'SECRET ACHIEVEMENT' : 'ACHIEVEMENT UNLOCKED'}
+            </span>
+          </span>
+          {queue.length > 1 && (
+            <span className="rounded-full border border-[#24415C] bg-white px-2 py-0.5 text-[10px] font-black tabular-nums text-[#24415C]">
+              1/{queue.length}
+            </span>
+          )}
         </div>
 
-        <div className="min-w-0 flex-1 text-left">
-          <div className="flex items-center gap-1 text-[10px] font-black tracking-wider text-[#B45309] uppercase">
-            <Trophy className="h-3 w-3 shrink-0" />
-            <span>ACHIEVEMENT UNLOCKED</span>
-          </div>
-          <div className="truncate font-display text-base font-bold text-[#24415C]">
+        {/* Badge / Crest Reveal */}
+        <div className="mt-3 flex flex-col items-center">
+          {badge ? (
+            <BadgeArtwork
+              badge={badge}
+              size={84}
+              effectsEnabled={badgeEffectsEnabled}
+              reducedMotion={reducedMotion}
+              className={useAnim ? 'anim-float' : ''}
+            />
+          ) : (
+            <div
+              className={`relative flex h-20 w-20 items-center justify-center rounded-3xl border-[3px] border-[#24415C] bg-gradient-to-br ${rarityStyle.cardGradient} text-[#24415C] shadow-[0_4px_0_#24415C] ${
+                useAnim ? 'anim-float' : ''
+              }`}
+            >
+              {renderAchievementIcon(current.icon, 'h-10 w-10')}
+            </div>
+          )}
+
+          <span
+            className={`mt-2.5 inline-flex items-center rounded-full border border-[#24415C] px-2.5 py-0.5 text-[10px] font-black tracking-wider uppercase ${rarityStyle.badgeBg} ${rarityStyle.badgeText}`}
+          >
+            {rarityStyle.label} · +{current.points} PTS
+          </span>
+
+          <h2 className="mt-1.5 font-display text-2xl leading-tight font-bold text-[#24415C]">
             {current.name}
-          </div>
-          <div className="truncate text-[11px] font-bold text-[#24415C]/75">
+          </h2>
+
+          <p className="mt-1 text-xs leading-snug font-bold text-[#24415C]/80">
             {current.description}
+          </p>
+        </div>
+
+        {/* Rewards Breakdown */}
+        <div className="mt-3.5 rounded-2xl border-2 border-[#24415C]/15 bg-[#EEF7FF] p-2.5">
+          <div className="text-[9px] font-black tracking-wider text-[#3998F7] uppercase">
+            REWARDS EARNED
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
+            {current.rewardXP > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-[#3998F7] px-2 py-0.5 text-[11px] font-black text-white">
+                <Zap className="h-3 w-3" />
+                <span>+{current.rewardXP} XP</span>
+              </span>
+            )}
+            {current.rewardCoins > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-[#FFD84D] px-2 py-0.5 text-[11px] font-black text-[#24415C]">
+                <Coins className="h-3 w-3 text-[#B45309]" />
+                <span>+{current.rewardCoins}</span>
+              </span>
+            )}
+            {current.rewardGems > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-[#E0F2FE] px-2 py-0.5 text-[11px] font-black text-[#0369A1]">
+                <Gem className="h-3 w-3 text-[#0EA5E9]" />
+                <span>+{current.rewardGems}</span>
+              </span>
+            )}
+            {badge && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-white px-2 py-0.5 text-[10px] font-black text-[#24415C]">
+                <Award className="h-3 w-3 text-[#9333EA]" />
+                <span>Badge: {badge.name}</span>
+              </span>
+            )}
+            {titleDef && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-[#FEF08A] px-2 py-0.5 text-[10px] font-black text-[#24415C]">
+                <Crown className="h-3 w-3 text-[#B45309]" />
+                <span>Title: {titleDef.name}</span>
+              </span>
+            )}
+            {frameMeta && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-[#F3E8FF] px-2 py-0.5 text-[10px] font-black text-[#6B21A8]">
+                <Sparkles className="h-3 w-3" />
+                <span>Frame: {frameMeta.name}</span>
+              </span>
+            )}
+            {current.skinId && (
+              <span className="inline-flex items-center gap-1 rounded-xl border border-[#24415C] bg-[#ECFDF5] px-2 py-0.5 text-[10px] font-black text-[#047857]">
+                <Sparkles className="h-3 w-3" />
+                <span>Skin: {current.skinId.toUpperCase()}</span>
+              </span>
+            )}
           </div>
         </div>
+
+        {/* Continue Button */}
+        <button
+          type="button"
+          onClick={() => {
+            audioManager.playButton();
+            onConsumeCurrent();
+          }}
+          className="btn-base btn-green mt-4 min-h-[48px] w-full text-base tracking-wide"
+        >
+          <span>{queue.length > 1 ? 'NEXT REWARD' : 'AWESOME!'}</span>
+          <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );

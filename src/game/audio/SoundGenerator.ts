@@ -107,10 +107,26 @@ export class SoundGenerator {
   }
 
   public playAchievement(ctx: AudioContext, output: GainNode): void {
+    this.playAchievementUnlock(ctx, output, 'RARE');
+  }
+
+  public playAchievementUnlock(
+    ctx: AudioContext,
+    output: GainNode,
+    rarity: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' = 'COMMON'
+  ): void {
     const now = ctx.currentTime;
-    const notes = [587.33, 739.99, 880.0, 1174.66];
+    const notesByRarity: Record<string, number[]> = {
+      COMMON: [587.33, 739.99, 880.0],
+      UNCOMMON: [587.33, 739.99, 880.0, 1174.66],
+      RARE: [523.25, 659.25, 783.99, 1046.5, 1318.51],
+      EPIC: [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98],
+      LEGENDARY: [440.0, 554.37, 659.25, 880.0, 1108.73, 1318.51, 1760.0],
+    };
+    const notes = notesByRarity[rarity] || notesByRarity.COMMON;
+    const type: OscillatorType = rarity === 'LEGENDARY' || rarity === 'EPIC' ? 'triangle' : 'sine';
     notes.forEach((freq, idx) => {
-      this.playTone(ctx, output, freq, 'sine', now + idx * 0.07, 0.2, 0.17);
+      this.playTone(ctx, output, freq, type, now + idx * 0.055, 0.22, rarity === 'LEGENDARY' ? 0.19 : 0.16);
     });
   }
 

@@ -5,6 +5,11 @@ export interface PowerUpCurrencyStats {
   totalPowerUpsCollected: number;
   shieldSaves: number;
   revivesUsed: number;
+  totalCoinsEarned?: number;
+  totalGemsEarned?: number;
+  totalCoinsSpent?: number;
+  totalGemsSpent?: number;
+  shopPurchases?: number;
 }
 
 export interface CurrencySnapshot {
@@ -22,7 +27,7 @@ interface StoredCurrencyPayload {
 }
 
 const CURRENCY_STORAGE_KEY = 'flappy_face_currency';
-const CURRENCY_STORAGE_VERSION = 1;
+const CURRENCY_STORAGE_VERSION = 2;
 
 const DEFAULT_STATS: PowerUpCurrencyStats = {
   totalCoinsCollected: 0,
@@ -31,6 +36,11 @@ const DEFAULT_STATS: PowerUpCurrencyStats = {
   totalPowerUpsCollected: 0,
   shieldSaves: 0,
   revivesUsed: 0,
+  totalCoinsEarned: 0,
+  totalGemsEarned: 0,
+  totalCoinsSpent: 0,
+  totalGemsSpent: 0,
+  shopPurchases: 0,
 };
 
 export class CurrencyManager {
@@ -48,7 +58,19 @@ export class CurrencyManager {
     return {
       coins: this.coins,
       gems: this.gems,
-      stats: { ...this.stats },
+      stats: {
+        totalCoinsCollected: this.stats.totalCoinsCollected,
+        totalGemsCollected: this.stats.totalGemsCollected,
+        totalStarsCollected: this.stats.totalStarsCollected,
+        totalPowerUpsCollected: this.stats.totalPowerUpsCollected,
+        shieldSaves: this.stats.shieldSaves,
+        revivesUsed: this.stats.revivesUsed,
+        totalCoinsEarned: this.stats.totalCoinsEarned ?? 0,
+        totalGemsEarned: this.stats.totalGemsEarned ?? 0,
+        totalCoinsSpent: this.stats.totalCoinsSpent ?? 0,
+        totalGemsSpent: this.stats.totalGemsSpent ?? 0,
+        shopPurchases: this.stats.shopPurchases ?? 0,
+      },
     };
   }
 
@@ -69,6 +91,8 @@ export class CurrencyManager {
     this.gems += safeGems;
     this.stats.totalCoinsCollected += safeCoins;
     this.stats.totalGemsCollected += safeGems;
+    this.stats.totalCoinsEarned = (this.stats.totalCoinsEarned ?? 0) + safeCoins;
+    this.stats.totalGemsEarned = (this.stats.totalGemsEarned ?? 0) + safeGems;
     if (isStar) {
       this.stats.totalStarsCollected += 1;
     }
@@ -107,6 +131,28 @@ export class CurrencyManager {
     const safeGems = Math.max(0, Math.floor(gems));
     this.coins += safeCoins;
     this.gems += safeGems;
+    this.stats.totalCoinsEarned = (this.stats.totalCoinsEarned ?? 0) + safeCoins;
+    this.stats.totalGemsEarned = (this.stats.totalGemsEarned ?? 0) + safeGems;
+    this.save();
+    this.notify();
+    return true;
+  }
+
+  public spendCurrency(coinsToSpend: number, gemsToSpend: number, isShopPurchase = true): boolean {
+    const safeCoins = Math.max(0, Math.floor(coinsToSpend));
+    const safeGems = Math.max(0, Math.floor(gemsToSpend));
+    if (safeCoins === 0 && safeGems === 0) return false;
+    if (this.coins < safeCoins || this.gems < safeGems) {
+      return false;
+    }
+
+    this.coins -= safeCoins;
+    this.gems -= safeGems;
+    this.stats.totalCoinsSpent = (this.stats.totalCoinsSpent ?? 0) + safeCoins;
+    this.stats.totalGemsSpent = (this.stats.totalGemsSpent ?? 0) + safeGems;
+    if (isShopPurchase) {
+      this.stats.shopPurchases = (this.stats.shopPurchases ?? 0) + 1;
+    }
     this.save();
     this.notify();
     return true;
@@ -156,13 +202,20 @@ export class CurrencyManager {
         const s = parsed.stats;
         const cleanInt = (v: unknown) =>
           typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0;
+        const collectedCoins = cleanInt(s.totalCoinsCollected);
+        const collectedGems = cleanInt(s.totalGemsCollected);
         this.stats = {
-          totalCoinsCollected: cleanInt(s.totalCoinsCollected),
-          totalGemsCollected: cleanInt(s.totalGemsCollected),
+          totalCoinsCollected: collectedCoins,
+          totalGemsCollected: collectedGems,
           totalStarsCollected: cleanInt(s.totalStarsCollected),
           totalPowerUpsCollected: cleanInt(s.totalPowerUpsCollected),
           shieldSaves: cleanInt(s.shieldSaves),
           revivesUsed: cleanInt(s.revivesUsed),
+          totalCoinsEarned: Math.max(collectedCoins, cleanInt(s.totalCoinsEarned), this.coins),
+          totalGemsEarned: Math.max(collectedGems, cleanInt(s.totalGemsEarned), this.gems),
+          totalCoinsSpent: cleanInt(s.totalCoinsSpent),
+          totalGemsSpent: cleanInt(s.totalGemsSpent),
+          shopPurchases: cleanInt(s.shopPurchases),
         };
       }
     } catch {

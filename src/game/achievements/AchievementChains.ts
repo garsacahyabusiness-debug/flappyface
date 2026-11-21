@@ -1,0 +1,85 @@
+import { AchievementChainDef } from './AchievementTypes';
+
+export const ACHIEVEMENT_CHAINS: readonly AchievementChainDef[] = [
+  {
+    id: 'pipe_series',
+    name: 'Pipe Master Series',
+    description: 'Taklukkan pipa secara kumulatif di seluruh penerbangan.',
+    category: 'gameplay',
+    achievementIds: [
+      'first_pipe',
+      'pipe_runner',
+      'pipe_breaker',
+      'pipe_master',
+      'flappy_god',
+    ],
+  },
+  {
+    id: 'score_series',
+    name: 'Sky Altitude Series',
+    description: 'Pecahkan batas skor tertinggi dalam satu penerbangan.',
+    category: 'score',
+    achievementIds: [
+      'first_flight',
+      'rookie',
+      'pro_flyer',
+      'impossible',
+      'sky_master',
+      'legend',
+      'sky_sovereign',
+    ],
+  },
+  {
+    id: 'collection_series',
+    name: 'Coin & Gem Fortune',
+    description: 'Kumpulkan koin emas sebanyak mungkin sepanjang petualangan.',
+    category: 'collection',
+    achievementIds: [
+      'first_coin',
+      'pocket_change',
+      'coin_collector',
+      'gold_hoarder',
+      'rich_bird',
+      'treasure_king',
+    ],
+  },
+  {
+    id: 'skill_series',
+    name: 'Pure Skill Mastery',
+    description: 'Terbang murni tanpa bantuan Power-Up atau tabrakan dekat.',
+    category: 'skill',
+    achievementIds: [
+      'close_call',
+      'untouchable_10',
+      'pure_skill',
+      'pure_legend',
+      'precision_master',
+    ],
+  },
+  {
+    id: 'tournament_series',
+    name: 'Arena Champion Path',
+    description: 'Kuasai panggung duel turnamen lokal.',
+    category: 'tournament',
+    achievementIds: [
+      'arena_rookie',
+      'first_trophy',
+      'bo3_champion',
+      'arena_regular',
+      'tournament_god',
+    ],
+  },
+  {
+    id: 'world_series',
+    name: 'World Explorer Series',
+    description: 'Buka dan jelajahi setiap dunia FLAPPY FACE.',
+    category: 'worlds',
+    achievementIds: [
+      'first_journey',
+      'biome_hopper',
+      'world_traveler',
+      'cosmos_unlocked',
+      'world_conqueror',
+    ],
+  },
+];

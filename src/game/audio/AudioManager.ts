@@ -13,6 +13,7 @@ export interface AudioVolumes {
   ambientEnabled?: boolean;
   missionSoundsEnabled?: boolean;
   progressionSoundsEnabled?: boolean;
+  achievementSoundsEnabled?: boolean;
 }
 
 function clamp01(v: number): number {
@@ -39,6 +40,7 @@ export class AudioManager {
     ambientEnabled: true,
     missionSoundsEnabled: true,
     progressionSoundsEnabled: true,
+    achievementSoundsEnabled: true,
   };
 
   private unlocked = false;
@@ -158,6 +160,10 @@ export class AudioManager {
         typeof next.progressionSoundsEnabled === 'boolean'
           ? next.progressionSoundsEnabled
           : this.config.progressionSoundsEnabled,
+      achievementSoundsEnabled:
+        typeof next.achievementSoundsEnabled === 'boolean'
+          ? next.achievementSoundsEnabled
+          : this.config.achievementSoundsEnabled,
     };
 
     this.applyGainValues(false);
@@ -308,8 +314,18 @@ export class AudioManager {
   }
 
   public playAchievement(): void {
+    if (this.config.achievementSoundsEnabled === false) return;
     const ready = this.canPlaySfx(true);
     if (ready) this.soundGen.playAchievement(ready.ctx, ready.out);
+  }
+
+  public playAchievementUnlock(
+    rarity: 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' = 'COMMON'
+  ): void {
+    if (this.config.achievementSoundsEnabled === false) return;
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playAchievementUnlock(ready.ctx, ready.out, rarity);
   }
 
   public playCountdownTick(): void {

@@ -36,6 +36,10 @@ export interface GameSettings {
   xpNotificationsEnabled: boolean;
   levelUpAnimationEnabled: boolean;
   progressionSoundsEnabled: boolean;
+  achievementNotificationsEnabled: boolean;
+  achievementSoundsEnabled: boolean;
+  achievementUnlockAnimationEnabled: boolean;
+  achievementBadgeEffectsEnabled: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'flappy_face_settings';
@@ -76,6 +80,10 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   xpNotificationsEnabled: true,
   levelUpAnimationEnabled: true,
   progressionSoundsEnabled: true,
+  achievementNotificationsEnabled: true,
+  achievementSoundsEnabled: true,
+  achievementUnlockAnimationEnabled: true,
+  achievementBadgeEffectsEnabled: true,
 };
 
 function clamp01(val: unknown, fallback: number): number {
@@ -166,6 +174,7 @@ export class SettingsManager {
       ambientEnabled: this.settings.ambientSoundEnabled,
       missionSoundsEnabled: this.settings.missionSoundsEnabled,
       progressionSoundsEnabled: this.settings.progressionSoundsEnabled,
+      achievementSoundsEnabled: this.settings.achievementSoundsEnabled,
     });
     vibrationManager.setEnabled(this.settings.vibrationEnabled);
   }
@@ -291,6 +300,22 @@ export class SettingsManager {
           typeof parsed.progressionSoundsEnabled === 'boolean'
             ? parsed.progressionSoundsEnabled
             : DEFAULT_GAME_SETTINGS.progressionSoundsEnabled,
+        achievementNotificationsEnabled:
+          typeof parsed.achievementNotificationsEnabled === 'boolean'
+            ? parsed.achievementNotificationsEnabled
+            : DEFAULT_GAME_SETTINGS.achievementNotificationsEnabled,
+        achievementSoundsEnabled:
+          typeof parsed.achievementSoundsEnabled === 'boolean'
+            ? parsed.achievementSoundsEnabled
+            : DEFAULT_GAME_SETTINGS.achievementSoundsEnabled,
+        achievementUnlockAnimationEnabled:
+          typeof parsed.achievementUnlockAnimationEnabled === 'boolean'
+            ? parsed.achievementUnlockAnimationEnabled
+            : DEFAULT_GAME_SETTINGS.achievementUnlockAnimationEnabled,
+        achievementBadgeEffectsEnabled:
+          typeof parsed.achievementBadgeEffectsEnabled === 'boolean'
+            ? parsed.achievementBadgeEffectsEnabled
+            : DEFAULT_GAME_SETTINGS.achievementBadgeEffectsEnabled,
       };
     } catch {
       return { ...DEFAULT_GAME_SETTINGS };

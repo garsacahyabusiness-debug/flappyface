@@ -13,8 +13,13 @@ import { characterSkinManager, SkinId } from './game/character/CharacterSkinMana
 import { CharacterSlot } from './game/character/CharacterStorage';
 import { CharacterMetrics, characterUnlockManager } from './game/character/CharacterUnlockManager';
 import { Game, GameUIState } from './game/Game';
+import { rewardShopManager } from './game/achievements/RewardShopManager';
 import { currencyManager, CurrencySnapshot } from './game/powerups/CurrencyManager';
-import { achievementManager, AchievementRecord } from './game/progression/AchievementManager';
+import {
+  achievementManager,
+  AchievementRecord,
+  AchievementSnapshot,
+} from './game/progression/AchievementManager';
 import {
   leaderboardManager,
   LeaderboardPlayerEntry,
@@ -106,6 +111,9 @@ export default function App() {
   const [, setCollectionVersion] = useState(0);
   const [twoPlayerDraftNames, setTwoPlayerDraftNames] = useState(() => loadStoredPlayerNames());
   const [settings, setSettings] = useState<GameSettings>(() => settingsManager.getSettings());
+  const [achievementSnapshot, setAchievementSnapshot] = useState<AchievementSnapshot>(() =>
+    achievementManager.getSnapshot()
+  );
   const [achievements, setAchievements] = useState<AchievementRecord[]>(() =>
     achievementManager.getAll()
   );
@@ -205,6 +213,15 @@ export default function App() {
     setAchievementQueue((prev) => prev.slice(1));
   }, []);
 
+  const enqueueAchievements = useCallback((list: AchievementRecord[]) => {
+    if (!list || list.length === 0) return;
+    setAchievementQueue((prev) => {
+      const seen = new Set(prev.map((a) => a.id));
+      const added = list.filter((a) => !seen.has(a.id));
+      return added.length > 0 ? [...prev, ...added] : prev;
+    });
+  }, []);
+
   const consumeCurrentMissionNotification = useCallback(() => {
     setMissionQueue((prev) => prev.slice(1));
   }, []);
@@ -234,8 +251,9 @@ export default function App() {
       gameRef.current?.setPerformanceMode(next.performanceMode);
       gameRef.current?.syncEnvironmentSettings();
     });
-    const unsubAchievements = achievementManager.subscribe((list) => {
-      setAchievements(list);
+    const unsubAchievements = achievementManager.subscribeSnapshot((snap) => {
+      setAchievementSnapshot(snap);
+      setAchievements(snap.records);
     });
     const unsubStats = statsManager.subscribe((nextStats) => {
       setStats(nextStats);
@@ -297,12 +315,33 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [uiState.newBestEventId]);
 
-  // Clear temporary HUD banner if player exits gameplay
+  // Clear temporary HUD banner if player exits gameplay & track explored menus for Curious Bird achievement
   useEffect(() => {
     if (uiState.state !== 'PLAYING') {
       setShowNewBestBanner(false);
     }
-  }, [uiState.state]);
+    const menuScreens = new Set([
+      'WORLD_SELECT',
+      'WORLD_COLLECTION',
+      'CHARACTER_COLLECTION',
+      'CHARACTER_SELECT',
+      'MISSION_CENTER',
+      'PLAYER_PROFILE',
+      'PLAYER_PROGRESSION',
+      'ACHIEVEMENTS',
+      'LEADERBOARD',
+      'STATS',
+      'SETTINGS',
+      'ABOUT',
+    ]);
+    if (menuScreens.has(uiState.state)) {
+      const unlocked = achievementManager.recordEvent({
+        type: 'menu_visited',
+        menuId: uiState.state,
+      });
+      enqueueAchievements(unlocked);
+    }
+  }, [uiState.state, enqueueAchievements]);
 
   // Unlock Web Audio cleanly on first user interaction and mark menu music desired
   useEffect(() => {
@@ -372,7 +411,7 @@ export default function App() {
         setUiState(next);
       },
       (newlyUnlocked) => {
-        setAchievementQueue((prev) => [...prev, ...newlyUnlocked]);
+        enqueueAchievements(newlyUnlocked);
       },
       (newlyUnlockedChars) => {
         setCharacterUnlockQueue((prev) => [...prev, ...newlyUnlockedChars]);
@@ -559,7 +598,10 @@ export default function App() {
     };
   }, []);
 
-  const unlockedCount = achievements.filter((a) => a.unlocked).length;
+  const unlockedCount = achievementSnapshot.stats.unlockedAchievements;
+  const showcaseRecords = achievementSnapshot.showcaseIds
+    .map((id) => achievementSnapshot.records.find((r) => r.id === id && r.unlocked))
+    .filter((r): r is AchievementRecord => Boolean(r));
   const personalRecordTitle = achievementManager.getHighestMilestoneName(
     Math.max(uiState.bestScore, stats.bestScore)
   );
@@ -639,6 +681,11 @@ export default function App() {
         {/* NON-BLOCKING ACHIEVEMENT UNLOCK POPUP */}
         <AchievementPopup
           queue={achievementQueue}
+          suppressed={isFlightOrCountdown}
+          enabled={settings.achievementNotificationsEnabled}
+          animationEnabled={settings.achievementUnlockAnimationEnabled}
+          badgeEffectsEnabled={settings.achievementBadgeEffectsEnabled}
+          reducedMotion={settings.reducedMotion}
           onConsumeCurrent={consumeCurrentAchievement}
         />
 
@@ -762,6 +809,11 @@ export default function App() {
               playerRankIcon={soloProfile.rank.icon}
               playerTitleName={getTitleById(soloProfile.equippedTitleId).name}
               unclaimedLevelRewards={playerProgressionManager.getUnclaimedRewardLevels('solo').length}
+              showcaseRecords={showcaseRecords}
+              achievementPoints={achievementSnapshot.stats.earnedAchievementPoints}
+              achievementRankLabel={achievementSnapshot.stats.rank.label}
+              badgeEffectsEnabled={settings.achievementBadgeEffectsEnabled}
+              reducedMotion={settings.reducedMotion}
               onPlay={() => gameRef.current?.startReady()}
               onTwoPlayer={() => {
                 const current = loadStoredPlayerNames();
@@ -884,6 +936,7 @@ export default function App() {
               }}
               onSelectSkin={(skinId: SkinId) => {
                 characterSkinManager.selectSkin(skinId, 'default');
+                enqueueAchievements(achievementManager.recordEvent({ type: 'skin_equipped', skinId }));
               }}
               onToggleFavorite={(id) => {
                 characterFavorites.toggleFavorite(id, 'default');
@@ -930,6 +983,7 @@ export default function App() {
               }}
               onSelectSkin={(skinId: SkinId) => {
                 characterSkinManager.selectSkin(skinId, charEditorTarget);
+                enqueueAchievements(achievementManager.recordEvent({ type: 'skin_equipped', skinId }));
               }}
               onToggleFavorite={(id) => {
                 characterFavorites.toggleFavorite(id, charEditorTarget);
@@ -1039,9 +1093,15 @@ export default function App() {
         {uiState.state === 'ACHIEVEMENTS' && (
           <div className="absolute inset-0 z-20">
             <AchievementCollectionUI
-              achievements={achievements}
-              bestScore={uiState.bestScore}
-              powerUpStats={currency.stats}
+              snapshot={achievementSnapshot}
+              coins={currency.coins}
+              gems={currency.gems}
+              badgeEffectsEnabled={settings.achievementBadgeEffectsEnabled}
+              reducedMotion={settings.reducedMotion}
+              onShopPurchased={(unlocked) => {
+                gameRef.current?.syncExternalVisuals();
+                enqueueAchievements(unlocked);
+              }}
               onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
             />
           </div>
@@ -1108,6 +1168,9 @@ export default function App() {
               p2Selection={p2Selection}
               p1SkinId={p1SkinId}
               p2SkinId={p2SkinId}
+              achievementSnapshot={achievementSnapshot}
+              badgeEffectsEnabled={settings.achievementBadgeEffectsEnabled}
+              reducedMotion={settings.reducedMotion}
               onRenameSlot={(slot: ProgressionProfileId, newName: string) => {
                 if (slot === 'player1') {
                   const cur = loadStoredPlayerNames();
@@ -1169,10 +1232,12 @@ export default function App() {
                 gameRef.current?.resetProgression();
                 gameRef.current?.resetCollectionAndSkins();
                 missionManager.reset();
+                rewardShopManager.reset();
                 settingsManager.resetToDefaults();
                 leaderboardManager.reset();
                 resetStoredPlayerNames();
                 setTwoPlayerDraftNames(loadStoredPlayerNames());
+                setAchievementQueue([]);
                 setMissionQueue([]);
                 setCharacterUnlockQueue([]);
                 setWorldUnlockQueue([]);
@@ -1220,6 +1285,7 @@ export default function App() {
             }}
             onSelectSkin={(skinId) => {
               characterSkinManager.selectSkin(skinId, profileTarget.slot);
+              enqueueAchievements(achievementManager.recordEvent({ type: 'skin_equipped', skinId }));
             }}
             onClose={() => setProfileTarget(null)}
           />
@@ -1390,6 +1456,7 @@ export default function App() {
                     ? player2FaceImg
                     : null
               }
+              showcaseRecords={showcaseRecords}
               onContinue={() => {
                 if (uiState.state === 'PLAYER_1_GAME_OVER') {
                   gameRef.current?.continueFromPlayer1GameOver();
@@ -1458,6 +1525,7 @@ export default function App() {
                     )?.currentWinStreak ?? 0)
                   : 0
             }
+            showcaseRecords={showcaseRecords}
             onRematch={() => gameRef.current?.rematchTwoPlayer()}
             onChangePlayer={() => {
               if (uiState.twoPlayerMatch) {

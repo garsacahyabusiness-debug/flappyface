@@ -197,10 +197,15 @@ async function runTests(): Promise<void> {
       computeLevelStateFromTotalXP,
     },
     { PLAYER_RANK_TIERS, getRankForLevel },
-    { TITLE_REGISTRY, getTitleById },
+    { TITLE_REGISTRY, ALL_TITLES_REGISTRY, getTitleById },
     { LEVEL_REWARD_TRACK, LEVEL_REWARD_MAP, getNextLevelReward },
     { PlayerProgressionManager, playerProgressionManager },
     { claimLevelRewardWithGrant },
+    { ACHIEVEMENT_DEFINITIONS },
+    { ACHIEVEMENT_RARITY_CONFIG, computeAchievementRank },
+    { ACHIEVEMENT_CHAINS },
+    { FIXED_BADGE_REGISTRY },
+    { REWARD_SHOP_ITEMS, rewardShopManager },
   ] = await Promise.all([
     import('../src/game/Config'),
     import('../src/game/Physics'),
@@ -244,6 +249,11 @@ async function runTests(): Promise<void> {
     import('../src/game/progression/LevelRewardRegistry'),
     import('../src/game/progression/PlayerProgressionManager'),
     import('../src/game/progression/LevelRewardService'),
+    import('../src/game/achievements/AchievementRegistry'),
+    import('../src/game/achievements/AchievementPointsManager'),
+    import('../src/game/achievements/AchievementChains'),
+    import('../src/game/achievements/BadgeRegistry'),
+    import('../src/game/achievements/RewardShopManager'),
   ]);
 
   let passed = 0;
@@ -516,6 +526,29 @@ async function runTests(): Promise<void> {
 
     const top = lb.getTopPlayers();
     assert.equal(top[0].name, 'ALFA');
+    assert.equal(top[0].isNewRank, true, 'First session entrants show as new on leaderboard');
+
+    // New session: BETA overtakes ALFA -> BETA climbs (+1), ALFA drops (-1), and persists across reload
+    const lbSession2 = new LeaderboardManager();
+    for (let i = 0; i < 2; i++) {
+      const mBeta = finalizeRoundInMatch(
+        createInitialMatchData('ALFA', 'BETA', 'quick'),
+        1,
+        10
+      ).updatedMatch;
+      lbSession2.recordCompletedMatch(mBeta);
+    }
+    const topSession2 = lbSession2.getTopPlayers();
+    assert.equal(topSession2[0].name, 'BETA');
+    assert.equal(topSession2[0].rankDelta, 1, 'BETA climbed from #2 to #1');
+    assert.equal(topSession2[1].name, 'ALFA');
+    assert.equal(topSession2[1].rankDelta, -1, 'ALFA dropped from #1 to #2');
+
+    // Reload preserves previous session trend until next session match is played
+    const lbReloadedTrend = new LeaderboardManager();
+    const topReloadedTrend = lbReloadedTrend.getTopPlayers();
+    assert.equal(topReloadedTrend[0].rankDelta, 1);
+    assert.equal(topReloadedTrend[1].rankDelta, -1);
 
     // History cap 25
     for (let i = 0; i < 30; i++) {
@@ -550,7 +583,7 @@ async function runTests(): Promise<void> {
     assert.equal(dup.length, 0, 'Already unlocked achievements should not re-trigger');
 
     const stored = JSON.parse(storage.get('flappy_face_achievements') ?? '{}');
-    assert.equal(stored.version, 1);
+    assert.equal(stored.version, 2);
 
     // Rehydrate
     const amReloaded = new AchievementManager();
@@ -2264,6 +2297,283 @@ async function runTests(): Promise<void> {
     const recoveredPm = new PlayerProgressionManager();
     assert.equal(recoveredPm.getProfile('solo').currentLevel, 1);
     assert.equal(recoveredPm.getProfile('solo').totalXP, 0);
+  });
+
+  // 38. Update 6 Registry Completeness: 122 Achievements, 11 Categories, 22 Hidden, 5 Rarities, 28 Badges, 6 Chains
+  await runCase('Update 6 Registry exposes 122 achievements across 11 categories, 5 rarities, 28 badges, and 6 chains', () => {
+    assert.ok(ACHIEVEMENT_DEFINITIONS.length >= 100);
+    assert.equal(ACHIEVEMENT_DEFINITIONS.length, 122);
+
+    const uniqueIds = new Set(ACHIEVEMENT_DEFINITIONS.map((d) => d.id));
+    assert.equal(uniqueIds.size, ACHIEVEMENT_DEFINITIONS.length, 'Achievement IDs must be unique');
+
+    const categories = new Set(ACHIEVEMENT_DEFINITIONS.map((d) => d.category));
+    assert.equal(categories.size, 11, 'All 11 achievement categories must be represented');
+
+    const hiddenDefs = ACHIEVEMENT_DEFINITIONS.filter((d) => d.hidden);
+    assert.ok(hiddenDefs.length >= 20, 'Must have at least 20 hidden achievements');
+
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.COMMON.xp, 25);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.COMMON.coins, 25);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.COMMON.gems, 0);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.UNCOMMON.xp, 50);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.RARE.gems, 2);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.EPIC.gems, 5);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.LEGENDARY.xp, 500);
+    assert.equal(ACHIEVEMENT_RARITY_CONFIG.LEGENDARY.gems, 10);
+
+    assert.equal(FIXED_BADGE_REGISTRY.length, 28);
+    const badgeCats = new Set(FIXED_BADGE_REGISTRY.map((b) => b.category));
+    assert.equal(badgeCats.size, 7, 'All 7 badge categories must be represented');
+
+    assert.equal(ACHIEVEMENT_CHAINS.length, 6);
+    assert.ok(ALL_TITLES_REGISTRY.length >= TITLE_REGISTRY.length + 6);
+  });
+
+  // 39. Near-Miss Read-Only Detection Preserves Collision Hitbox Unchanged
+  await runCase('Near-miss helper detects close clearances without altering Collision.check hitboxes', () => {
+    const collision = new Collision();
+    const p = new Player();
+    const groundY = GAME_CONFIG.worldHeight - GAME_CONFIG.groundHeight;
+    const nearPipe = new Pipe(p.x - GAME_CONFIG.pipes.width / 2, 250, 140, 'green');
+    // gapTop = 180; p.collisionRadius = 15 => at p.y = 200, top hitbox = 185 (5px clearance <= 8px)
+    p.y = 200;
+
+    const collisionResult = collision.check(p, [nearPipe], groundY);
+    assert.equal(collisionResult.collided, false, 'Player inside safe gap must not collide');
+
+    const nearIds = collision.findNearMissPipeIds(p, [nearPipe], groundY, 8);
+    assert.deepEqual(
+      nearIds,
+      [nearPipe.id],
+      'Near-miss must trigger when clearance is within threshold without colliding'
+    );
+
+    // Moving far from edge returns no near miss
+    p.y = 250;
+    assert.deepEqual(collision.findNearMissPipeIds(p, [nearPipe], groundY, 8), []);
+  });
+
+  // 40. Real Event Unlocks: Gameplay, Skill, Hidden Secrets, Multiplayer, Tournament, and Idempotent Rewards
+  await runCase('Real achievement events unlock Gameplay, Skill, Hidden, Multiplayer, and Tournament achievements once', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterUnlockManager.reset();
+    characterSkinManager.reset();
+    worldUnlockManager.reset();
+    missionManager.reset();
+    playerProgressionManager.reset(true);
+    rewardShopManager.reset();
+
+    const am = new AchievementManager();
+
+    // Hidden: zero score death (oops_zero) + patient_bird + night_owl
+    const startedUnlocks = am.recordEvent({
+      type: 'game_started',
+      mode: 'solo',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      worldId: 'green_valley',
+      weather: 'sunny',
+      isCustomFace: false,
+      localHour: 2,
+      readyWaitSeconds: 9,
+    });
+    const runZero = am.recordEvent({
+      type: 'game_completed',
+      mode: 'solo',
+      score: 0,
+      pipes: 0,
+      elapsedSeconds: 3,
+      reason: 'ground',
+      characterId: 'classic_bird',
+      worldId: 'green_valley',
+      isCustomFace: false,
+      usedPowerUp: false,
+      usedShield: false,
+      usedSecondChance: false,
+      shieldSavesInRun: 0,
+      scoreAfterRevive: 0,
+      coinsInRun: 0,
+      starsInRun: 0,
+      gemsInRun: 0,
+      didPauseAndScore5: false,
+      localHour: 2,
+    });
+    const idsZero = new Set([...startedUnlocks, ...runZero].map((r) => r.id));
+    assert.ok(idsZero.has('oops_zero'), '0-score loss must unlock oops_zero');
+    assert.ok(idsZero.has('patient_flyer'), 'Waiting >=8s on READY must unlock patient_flyer');
+    assert.ok(idsZero.has('night_owl'), 'Local hour 02:00 must unlock night_owl');
+    assert.ok(idsZero.has('flying_start'), 'Starting first run must unlock flying_start');
+
+    // Lucky 7 + near miss + pause-and-clutch
+    am.recordEvent({ type: 'near_miss', count: 3, inRunTotal: 3 });
+    am.recordEvent({
+      type: 'score_updated',
+      score: 12,
+      mode: 'solo',
+      usedPowerUp: false,
+      usedShield: false,
+      usedSecondChance: false,
+      coinsInRun: 0,
+      nearMissCountInRun: 3,
+      characterId: 'classic_bird',
+      worldId: 'green_valley',
+      isCustomFace: false,
+    });
+    const clutchRes = am.recordEvent({
+      type: 'game_completed',
+      mode: 'solo',
+      score: 7,
+      pipes: 7,
+      elapsedSeconds: 18,
+      reason: 'pipe',
+      characterId: 'classic_bird',
+      worldId: 'green_valley',
+      isCustomFace: false,
+      usedPowerUp: false,
+      usedShield: false,
+      usedSecondChance: false,
+      shieldSavesInRun: 0,
+      scoreAfterRevive: 0,
+      coinsInRun: 0,
+      starsInRun: 0,
+      gemsInRun: 0,
+      didPauseAndScore5: true,
+      localHour: 14,
+    });
+    const clutchIds = new Set(clutchRes.map((r) => r.id));
+    assert.ok(clutchIds.has('lucky_seven'));
+    assert.ok(clutchIds.has('pause_and_clutch'));
+    assert.ok(am.getAll().find((r) => r.id === 'untouchable_10')?.unlocked);
+
+    // Curious bird (7 menus)
+    for (const m of ['WORLD_SELECT', 'MISSION_CENTER', 'PLAYER_PROFILE', 'PLAYER_PROGRESSION', 'ACHIEVEMENTS', 'SETTINGS', 'LEADERBOARD']) {
+      am.recordEvent({ type: 'menu_visited', menuId: m });
+    }
+    assert.ok(am.getAll().find((r) => r.id === 'curious_bird')?.unlocked);
+
+    // Tournament clean sweep & multiplayer draws
+    am.recordEvent({
+      type: 'multiplayer_played',
+      format: 'quick',
+      winner: 'draw',
+      combinedScore: 22,
+    });
+    const tRes = am.recordEvent({
+      type: 'tournament_completed',
+      format: 'bo5',
+      won: true,
+      winner: 'player1',
+      cleanSweep: true,
+      comebackWin: true,
+    });
+    const tIds = new Set(tRes.map((r) => r.id));
+    assert.ok(tIds.has('first_trophy'));
+    assert.ok(tIds.has('clean_sweep'));
+    assert.ok(tIds.has('tournament_comeback'));
+    assert.equal(am.getAll().find((r) => r.id === 'bo5_champion')?.progress, 1);
+
+    am.recordEvent({ format: 'bo5', type: 'tournament_completed', won: true, winner: 'player1', cleanSweep: false, comebackWin: false });
+    const t3 = am.recordEvent({ format: 'bo5', type: 'tournament_completed', won: true, winner: 'player1', cleanSweep: false, comebackWin: false });
+    const t3Ids = new Set(t3.map((r) => r.id));
+    assert.ok(t3Ids.has('bo5_champion'), '3rd BO5 win unlocks bo5_champion');
+    assert.ok(t3Ids.has('tournament_streak'), '3 consecutive tournament wins unlock tournament_streak');
+
+    // Verify coins/gems/xp were credited accurately & cannot duplicate
+    const coinsBefore = currencyManager.getSnapshot().coins;
+    assert.ok(coinsBefore > 0);
+    am.recordEvent({ type: 'menu_visited', menuId: 'SETTINGS' });
+    assert.equal(currencyManager.getSnapshot().coins, coinsBefore, 'Re-visiting must not duplicate coins');
+  });
+
+  // 41. Points, Rank Ladder, 3-Slot Showcase, and Reward Shop Purchase
+  await runCase('Achievement Rank tiers, 3-slot Showcase validation, and Reward Shop purchases work genuinely', () => {
+    assert.equal(computeAchievementRank(0).tier, 'BEGINNER');
+    assert.equal(computeAchievementRank(100).tier, 'COLLECTOR');
+    assert.equal(computeAchievementRank(500).tier, 'ACHIEVER');
+    assert.equal(computeAchievementRank(1000).tier, 'MASTER');
+    assert.equal(computeAchievementRank(2500).tier, 'ELITE');
+    assert.equal(computeAchievementRank(5000).tier, 'LEGEND');
+
+    storage.clear();
+    currencyManager.reset();
+    characterSkinManager.reset();
+    missionManager.reset();
+    playerProgressionManager.reset(true);
+    rewardShopManager.reset();
+
+    const am = new AchievementManager();
+    am.checkScore(15); // unlocks multiple score achievements
+    const unlockedIds = am.getAll().filter((r) => r.unlocked).map((r) => r.id);
+    assert.ok(unlockedIds.length >= 2);
+
+    // Reject locked achievements in showcase
+    const rejectLocked = am.setShowcaseSlots(['the_legend', unlockedIds[0]]);
+    assert.deepEqual(rejectLocked, [unlockedIds[0]]);
+
+    // Fund currency and purchase Reward Shop item -> unlocks real skin + achievement
+    currencyManager.addGameplayRewards(1000, 20);
+    const emeraldItem = REWARD_SHOP_ITEMS.find((i) => i.id === 'skin_emerald')!;
+    const purchase = rewardShopManager.purchase(emeraldItem.id);
+    assert.equal(purchase.success, true);
+    assert.ok(characterSkinManager.isUnlocked('emerald'));
+
+    const shopUnlocks = am.recordEvent({
+      type: 'shop_purchase',
+      coinsSpent: purchase.coinsSpent,
+      gemsSpent: purchase.gemsSpent,
+      totalOwnedCount: purchase.totalOwnedCount,
+    });
+    assert.ok(shopUnlocks.some((a) => a.id === 'spender'));
+  });
+
+  // 42. Settings Toggles, V1 -> V2 Lossless Migration & Corrupt Recovery
+  await runCase('Update 6 settings persist, v1 saves migrate without duplicate payouts, and corrupt saves recover cleanly', () => {
+    storage.clear();
+    currencyManager.reset();
+    playerProgressionManager.reset(true);
+    rewardShopManager.reset();
+
+    const sm = new SettingsManager();
+    sm.update({
+      achievementNotificationsEnabled: false,
+      achievementSoundsEnabled: false,
+      achievementUnlockAnimationEnabled: false,
+      achievementBadgeEffectsEnabled: false,
+    });
+    const reloaded = new SettingsManager().getSettings();
+    assert.equal(reloaded.achievementNotificationsEnabled, false);
+    assert.equal(reloaded.achievementSoundsEnabled, false);
+    assert.equal(reloaded.achievementUnlockAnimationEnabled, false);
+    assert.equal(reloaded.achievementBadgeEffectsEnabled, false);
+
+    // Simulate legacy v1 save payload
+    storage.set(
+      'flappy_face_achievements',
+      JSON.stringify({
+        version: 1,
+        records: {
+          first_flight: { unlocked: true, unlockedAt: 1700000000000 },
+          rookie: { unlocked: true, unlockedAt: 1700000001000 },
+        },
+      })
+    );
+    const migrated = new AchievementManager();
+    assert.equal(migrated.getUnlockedCount(), 2);
+    assert.equal(currencyManager.getSnapshot().coins, 0, 'Migration must not re-grant historical Coins');
+    assert.equal(
+      playerProgressionManager.getProfile('solo').totalXP,
+      0,
+      'Migration must not duplicate historical XP'
+    );
+    assert.equal(migrated.getSnapshot().recentUnlocks.length, 2);
+
+    // Corrupt payload recovery
+    storage.set('flappy_face_achievements', '{invalid-json!');
+    const recovered = new AchievementManager();
+    assert.equal(recovered.getUnlockedCount(), 0);
+    assert.equal(recovered.getAll().length, 122);
   });
 
   console.log(`\nALL ${passed} TESTS PASSED.`);

@@ -22,6 +22,7 @@ export interface CollectedItemEvent {
   x: number;
   y: number;
   def: CollectibleDefinition;
+  attractedByMagnet: boolean;
 }
 
 const MAX_COLLECTIBLE_POOL = 12;
@@ -137,11 +138,13 @@ export class CollectibleManager {
         )
       ) {
         c.active = false;
+        const wasAttracted = c.attracted || magnetActive;
         pickedUp.push({
           type: c.type,
           x: c.x,
           y: c.y,
           def,
+          attractedByMagnet: wasAttracted,
         });
         continue;
       }

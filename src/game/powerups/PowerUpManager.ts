@@ -40,6 +40,7 @@ export interface PowerUpUpdateOutput {
   coinsEarned: number;
   gemsEarned: number;
   starsCollected: number;
+  magnetCollectCount: number;
   collectedPowerUpIds: PowerUpId[];
 }
 
@@ -156,6 +157,7 @@ export class PowerUpManager {
     let totalCoinsEarned = 0;
     let totalGemsEarned = 0;
     let starsCollected = 0;
+    let magnetCollectCount = 0;
     const collectedPowerUpIds: PowerUpId[] = [];
     const mult = this.effects.getScoreMultiplier();
 
@@ -169,6 +171,7 @@ export class PowerUpManager {
       totalCoinsEarned += coinsEarned;
       totalGemsEarned += gemsEarned;
       if (item.type === 'star') starsCollected += 1;
+      if (item.attractedByMagnet) magnetCollectCount += 1;
       bonusScoreEarned += bonusScore;
       currencyChanged = true;
 
@@ -244,6 +247,7 @@ export class PowerUpManager {
       coinsEarned: totalCoinsEarned,
       gemsEarned: totalGemsEarned,
       starsCollected,
+      magnetCollectCount,
       collectedPowerUpIds,
     };
   }

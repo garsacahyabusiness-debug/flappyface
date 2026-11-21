@@ -16,12 +16,14 @@ import {
   User,
   Users,
 } from 'lucide-react';
+import { AchievementRecord } from '../game/achievements/AchievementTypes';
 import { audioManager } from '../game/audio/AudioManager';
 import { getCharacterById, RARITY_META } from '../game/character/CharacterRegistry';
 import { SkinId } from '../game/character/CharacterSkinManager';
 import { AVATAR_FRAME_META } from '../game/missions/MissionRegistry';
 import { AvatarFrameId } from '../game/missions/MissionTypes';
 import { getWorldById, WorldId } from '../game/worlds/WorldRegistry';
+import { AchievementShowcaseStrip } from './AchievementShowcaseStrip';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 import { CurrencyDisplay } from './CurrencyDisplay';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -52,6 +54,11 @@ interface MainMenuProps {
   playerRankIcon: string;
   playerTitleName: string;
   unclaimedLevelRewards: number;
+  showcaseRecords?: AchievementRecord[];
+  achievementPoints?: number;
+  achievementRankLabel?: string;
+  badgeEffectsEnabled?: boolean;
+  reducedMotion?: boolean;
   onPlay: () => void;
   onTwoPlayer: () => void;
   onTournament: () => void;
@@ -94,6 +101,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   playerRankIcon,
   playerTitleName,
   unclaimedLevelRewards,
+  showcaseRecords = [],
+  achievementPoints = 0,
+  achievementRankLabel,
+  badgeEffectsEnabled = true,
+  reducedMotion = false,
   onPlay,
   onTwoPlayer,
   onTournament,
@@ -190,6 +202,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               <span>WORLD EXPLORER</span>
             </div>
           )}
+
+          {achievementRankLabel && achievementPoints > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                audioManager.playButton();
+                onAchievements();
+              }}
+              className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-white/95 px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]"
+            >
+              <Award className="h-3 w-3 text-[#F59E0B]" />
+              <span>{achievementRankLabel}</span>
+              <span className="tabular-nums text-[#3998F7]">{achievementPoints}P</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -218,6 +245,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         >
           {isCustomFaceActive ? 'CUSTOM FACE' : activeChar.name}
         </span>
+
+        {showcaseRecords.length > 0 && (
+          <AchievementShowcaseStrip
+            records={showcaseRecords}
+            compact={true}
+            effectsEnabled={badgeEffectsEnabled}
+            reducedMotion={reducedMotion}
+            className="mt-1"
+          />
+        )}
 
         <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
           <button

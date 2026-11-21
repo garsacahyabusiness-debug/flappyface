@@ -11,6 +11,9 @@ export interface LeaderboardPlayerEntry {
   bestWinStreak: number;
   matchesPlayed: number;
   lastPlayedAt: number;
+  previousRank?: number | null;
+  rankDelta?: number | null;
+  isNewRank?: boolean;
 }
 
 export interface MatchHistoryEntry {
@@ -32,6 +35,7 @@ interface StoredLeaderboardPayload {
   version: number;
   players: Record<string, LeaderboardPlayerEntry>;
   history: MatchHistoryEntry[];
+  previousRanks?: Record<string, number>;
 }
 
 const LEADERBOARD_STORAGE_KEY = 'flappy_face_leaderboard';
@@ -61,6 +65,8 @@ function sanitizePositiveInt(val: unknown): number {
 export class LeaderboardManager {
   private players: Record<string, LeaderboardPlayerEntry> = {};
   private history: MatchHistoryEntry[] = [];
+  private previousRanks: Record<string, number> = {};
+  private hasSessionBaseline = false;
   private listeners = new Set<() => void>();
 
   constructor() {
@@ -74,16 +80,47 @@ export class LeaderboardManager {
     };
   }
 
+  private sortEntries(entries: LeaderboardPlayerEntry[]): LeaderboardPlayerEntry[] {
+    return entries.sort((a, b) => {
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      if (b.championships !== a.championships) return b.championships - a.championships;
+      if (b.bestWinStreak !== a.bestWinStreak) return b.bestWinStreak - a.bestWinStreak;
+      if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore;
+      return b.lastPlayedAt - a.lastPlayedAt;
+    });
+  }
+
+  private computeRankMap(playersMap: Record<string, LeaderboardPlayerEntry>): Record<string, number> {
+    const sorted = this.sortEntries(Object.values(playersMap).map((entry) => ({ ...entry })));
+    const ranks: Record<string, number> = {};
+    sorted.forEach((entry, idx) => {
+      ranks[entry.name] = idx + 1;
+    });
+    return ranks;
+  }
+
   public getTopPlayers(): LeaderboardPlayerEntry[] {
-    return Object.values(this.players)
-      .map((entry) => ({ ...entry }))
-      .sort((a, b) => {
-        if (b.wins !== a.wins) return b.wins - a.wins;
-        if (b.championships !== a.championships) return b.championships - a.championships;
-        if (b.bestWinStreak !== a.bestWinStreak) return b.bestWinStreak - a.bestWinStreak;
-        if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore;
-        return b.lastPlayedAt - a.lastPlayedAt;
-      });
+    const sorted = this.sortEntries(
+      Object.values(this.players).map((entry) => ({ ...entry }))
+    );
+    return sorted.map((entry, idx) => {
+      const currentRank = idx + 1;
+      const prevRank = this.previousRanks[entry.name];
+      if (typeof prevRank === 'number' && prevRank >= 1) {
+        return {
+          ...entry,
+          previousRank: prevRank,
+          rankDelta: prevRank - currentRank,
+          isNewRank: false,
+        };
+      }
+      return {
+        ...entry,
+        previousRank: null,
+        rankDelta: null,
+        isNewRank: true,
+      };
+    });
   }
 
   public getMatchHistory(): MatchHistoryEntry[] {
@@ -98,6 +135,11 @@ export class LeaderboardManager {
 
   public recordCompletedMatch(match: TwoPlayerMatchData): void {
     if (match.status !== 'completed' || !match.winner) return;
+
+    if (!this.hasSessionBaseline) {
+      this.previousRanks = this.computeRankMap(this.players);
+      this.hasSessionBaseline = true;
+    }
 
     const now = match.completedAt ?? Date.now();
     const p1Name = sanitizePlayerName(match.player1Name, 'PLAYER 1');
@@ -180,6 +222,8 @@ export class LeaderboardManager {
   public reset(): void {
     this.players = {};
     this.history = [];
+    this.previousRanks = {};
+    this.hasSessionBaseline = false;
     this.save();
     this.notify();
   }
@@ -196,12 +240,14 @@ export class LeaderboardManager {
       if (!raw) {
         this.players = {};
         this.history = [];
+        this.previousRanks = {};
         return;
       }
       const parsed = JSON.parse(raw) as Partial<StoredLeaderboardPayload>;
       if (!parsed || typeof parsed !== 'object') {
         this.players = {};
         this.history = [];
+        this.previousRanks = {};
         return;
       }
 
@@ -254,11 +300,27 @@ export class LeaderboardManager {
         }
       }
 
+      const cleanPreviousRanks: Record<string, number> = {};
+      if (parsed.previousRanks && typeof parsed.previousRanks === 'object') {
+        for (const [key, val] of Object.entries(parsed.previousRanks)) {
+          const rankNum = sanitizePositiveInt(val);
+          if (rankNum >= 1) {
+            cleanPreviousRanks[sanitizePlayerName(key, 'PLAYER 1')] = rankNum;
+          }
+        }
+      } else {
+        Object.assign(cleanPreviousRanks, this.computeRankMap(cleanPlayers));
+      }
+
       this.players = cleanPlayers;
       this.history = cleanHistory;
+      this.previousRanks = cleanPreviousRanks;
+      this.hasSessionBaseline = false;
     } catch {
       this.players = {};
       this.history = [];
+      this.previousRanks = {};
+      this.hasSessionBaseline = false;
     }
   }
 
@@ -268,6 +330,7 @@ export class LeaderboardManager {
         version: STORAGE_VERSION,
         players: this.players,
         history: this.history,
+        previousRanks: this.previousRanks,
       };
       window.localStorage.setItem(LEADERBOARD_STORAGE_KEY, JSON.stringify(payload));
     } catch {

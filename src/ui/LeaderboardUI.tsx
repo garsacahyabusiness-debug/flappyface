@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Crown, Flame, History, Swords, Trophy } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Crown,
+  Flame,
+  History,
+  Minus,
+  Swords,
+  Trophy,
+} from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
 import {
   LeaderboardPlayerEntry,
@@ -132,55 +142,97 @@ export const LeaderboardUI: React.FC<LeaderboardUIProps> = ({
                     </p>
                   </div>
                 ) : (
-                  players.map((player, idx) => (
-                    <div
-                      key={player.name}
-                      className="flex items-center justify-between rounded-2xl border-2 border-[#24415C]/15 bg-[#EEF7FF] px-3 py-2.5"
-                    >
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <span
-                          className={`font-display flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border-2 border-[#24415C] text-xs font-bold ${
-                            idx === 0
-                              ? 'bg-[#FFD84D] text-[#24415C]'
-                              : idx === 1
-                                ? 'bg-slate-200 text-[#24415C]'
-                                : idx === 2
-                                  ? 'bg-amber-200 text-[#24415C]'
-                                  : 'bg-white text-[#24415C]/70'
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-xs font-black text-[#24415C]">
-                              {player.name}
-                            </span>
-                            {player.currentWinStreak >= 2 && (
-                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-[#FF6B6B] px-1.5 py-0.5 text-[9px] font-black text-white">
-                                <Flame className="h-2.5 w-2.5" />
-                                {player.currentWinStreak}
+                  players.map((player, idx) => {
+                    const delta = player.rankDelta ?? null;
+                    const isNew = Boolean(player.isNewRank);
+                    return (
+                      <div
+                        key={player.name}
+                        className="flex items-center justify-between rounded-2xl border-2 border-[#24415C]/15 bg-[#EEF7FF] px-3 py-2.5"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span
+                            className={`font-display flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border-2 border-[#24415C] text-xs font-bold ${
+                              idx === 0
+                                ? 'bg-[#FFD84D] text-[#24415C]'
+                                : idx === 1
+                                  ? 'bg-slate-200 text-[#24415C]'
+                                  : idx === 2
+                                    ? 'bg-amber-200 text-[#24415C]'
+                                    : 'bg-white text-[#24415C]/70'
+                            }`}
+                          >
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="truncate text-xs font-black text-[#24415C]">
+                                {player.name}
                               </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] font-bold text-[#24415C]/65">
-                            {player.wins}W - {player.losses}L - {player.draws}D · Best:{' '}
-                            {player.bestScore}
-                            {player.bestWinStreak > 0 && ` · Max Streak: ${player.bestWinStreak}`}
+                              {player.currentWinStreak >= 2 && (
+                                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-[#FF6B6B] px-1.5 py-0.5 text-[9px] font-black text-white">
+                                  <Flame className="h-2.5 w-2.5" />
+                                  {player.currentWinStreak}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] font-bold text-[#24415C]/65">
+                              {player.wins}W - {player.losses}L - {player.draws}D · Best:{' '}
+                              {player.bestScore}
+                              {player.bestWinStreak > 0 && ` · Max Streak: ${player.bestWinStreak}`}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="shrink-0 pl-2 text-right">
-                        <div className="font-display text-lg leading-none font-bold tabular-nums text-[#3998F7]">
-                          {player.wins}
-                        </div>
-                        <div className="text-[9px] font-black text-[#24415C]/55 uppercase">
-                          WINS
+                        <div className="flex shrink-0 items-center gap-2 pl-2">
+                          {isNew ? (
+                            <span
+                              title="New on leaderboard since last session"
+                              aria-label="New on leaderboard since last session"
+                              className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-100 px-1.5 py-0.5 text-[9px] font-black tracking-wide text-sky-700 uppercase"
+                            >
+                              NEW
+                            </span>
+                          ) : delta !== null && delta > 0 ? (
+                            <span
+                              title={`Climbed ${delta} rank${delta > 1 ? 's' : ''} since last session`}
+                              aria-label={`Climbed ${delta} rank${delta > 1 ? 's' : ''} since last session`}
+                              className="inline-flex items-center gap-0.5 rounded-lg border border-emerald-300 bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-emerald-700"
+                            >
+                              <ArrowUp className="h-3 w-3 stroke-[2.75]" />
+                              <span>{delta}</span>
+                            </span>
+                          ) : delta !== null && delta < 0 ? (
+                            <span
+                              title={`Dropped ${Math.abs(delta)} rank${Math.abs(delta) > 1 ? 's' : ''} since last session`}
+                              aria-label={`Dropped ${Math.abs(delta)} rank${Math.abs(delta) > 1 ? 's' : ''} since last session`}
+                              className="inline-flex items-center gap-0.5 rounded-lg border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-black tabular-nums text-rose-700"
+                            >
+                              <ArrowDown className="h-3 w-3 stroke-[2.75]" />
+                              <span>{Math.abs(delta)}</span>
+                            </span>
+                          ) : (
+                            <span
+                              title="Rank unchanged since last session"
+                              aria-label="Rank unchanged since last session"
+                              className="inline-flex items-center justify-center rounded-lg border border-slate-300/80 bg-white/80 px-1.5 py-0.5 text-[10px] font-black text-slate-400"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </span>
+                          )}
+
+                          <div className="text-right">
+                            <div className="font-display text-lg leading-none font-bold tabular-nums text-[#3998F7]">
+                              {player.wins}
+                            </div>
+                            <div className="text-[9px] font-black text-[#24415C]/55 uppercase">
+                              WINS
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </>
             ) : history.length === 0 ? (

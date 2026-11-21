@@ -833,6 +833,93 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
             </div>
           </section>
 
+          {/* ACHIEVEMENTS & BADGES SECTION */}
+          <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
+            <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">
+              ACHIEVEMENTS &amp; BADGES
+            </h3>
+
+            <div className="mt-2.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Bell className="h-4 w-4 text-[#32B85C]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    ACHIEVEMENT NOTIFICATIONS
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.achievementNotificationsEnabled}
+                  label="Toggle Achievement Notifications"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      achievementNotificationsEnabled: !settings.achievementNotificationsEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Volume2 className="h-4 w-4 text-[#3998F7]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    ACHIEVEMENT SOUND
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.achievementSoundsEnabled}
+                  disabled={!audioSupported || !settings.sfxEnabled}
+                  label="Toggle Achievement Sound"
+                  onToggle={() => {
+                    audioManager.unlock();
+                    const next = !settings.achievementSoundsEnabled;
+                    settingsManager.update({ achievementSoundsEnabled: next });
+                    if (next) audioManager.playButton();
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#F59E0B]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    UNLOCK ANIMATION
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.achievementUnlockAnimationEnabled}
+                  label="Toggle Achievement Unlock Animation"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      achievementUnlockAnimationEnabled:
+                        !settings.achievementUnlockAnimationEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 text-[#9333EA]" />
+                  <span className="text-sm font-extrabold text-[#24415C]">
+                    BADGE EFFECTS
+                  </span>
+                </div>
+                <ToggleSwitch
+                  checked={settings.achievementBadgeEffectsEnabled}
+                  label="Toggle Badge Visual Effects"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      achievementBadgeEffectsEnabled: !settings.achievementBadgeEffectsEnabled,
+                    });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
           {/* OTHER SECTION */}
           <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
             <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">

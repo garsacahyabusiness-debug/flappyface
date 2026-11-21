@@ -10,9 +10,15 @@ import {
   Gamepad2,
   Gift,
   Sparkles,
+  Star,
   Swords,
   Trophy,
+  X,
 } from 'lucide-react';
+import { achievementManager } from '../game/achievements/AchievementManager';
+import { ACHIEVEMENT_RARITY_CONFIG } from '../game/achievements/AchievementPointsManager';
+import { AchievementRecord, AchievementSnapshot } from '../game/achievements/AchievementTypes';
+import { getBadgeById } from '../game/achievements/BadgeRegistry';
 import { audioManager } from '../game/audio/AudioManager';
 import { getCharacterById } from '../game/character/CharacterRegistry';
 import { SkinId } from '../game/character/CharacterSkinManager';
@@ -27,6 +33,9 @@ import {
 import { GameStats } from '../game/progression/StatsManager';
 import { getTitleById } from '../game/progression/TitleRegistry';
 import { getWorldById } from '../game/worlds/WorldRegistry';
+import { renderAchievementIcon } from './AchievementPopup';
+import { AchievementShowcaseStrip } from './AchievementShowcaseStrip';
+import { BadgeArtwork } from './BadgeArtwork';
 import { CharacterShowcaseCanvas } from './CharacterShowcaseCanvas';
 import { ProgressionTab } from './PlayerProgressionScreen';
 
@@ -53,6 +62,10 @@ interface PlayerProfileScreenProps {
   p2Selection: { mode: CharacterSelectionMode; characterId: string };
   p1SkinId: SkinId;
   p2SkinId: SkinId;
+  achievementSnapshot?: AchievementSnapshot;
+  badgeEffectsEnabled?: boolean;
+  reducedMotion?: boolean;
+  onUpdateShowcase?: (ids: string[]) => void;
   onRenameSlot?: (slot: ProgressionProfileId, newName: string) => void;
   onOpenProgression: (tab?: ProgressionTab) => void;
   onBack: () => void;
@@ -91,6 +104,10 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   p2Selection,
   p1SkinId,
   p2SkinId,
+  achievementSnapshot,
+  badgeEffectsEnabled = true,
+  reducedMotion = false,
+  onUpdateShowcase,
   onRenameSlot,
   onOpenProgression,
   onBack,
@@ -98,6 +115,15 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
   const [selectedSlot, setSelectedSlot] = useState<ProgressionProfileId>('solo');
   const [isEditingName, setIsEditingName] = useState(false);
   const [draftName, setDraftName] = useState(soloProfile.playerName);
+  const [showShowcasePicker, setShowShowcasePicker] = useState(false);
+
+  const unlockedRecords: AchievementRecord[] = (achievementSnapshot?.records ?? []).filter(
+    (r) => r.unlocked
+  );
+  const showcaseIds = achievementSnapshot?.showcaseIds ?? [];
+  const showcaseRecords: AchievementRecord[] = showcaseIds
+    .map((id) => unlockedRecords.find((r) => r.id === id))
+    .filter((r): r is AchievementRecord => Boolean(r));
 
   const profile =
     selectedSlot === 'player1' ? p1Profile : selectedSlot === 'player2' ? p2Profile : soloProfile;
@@ -340,6 +366,27 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
             </div>
           </div>
 
+          {/* 3-Slot Achievement Showcase (Solo Profile) */}
+          {selectedSlot === 'solo' && achievementSnapshot && (
+            <div className="mt-3 rounded-2xl border border-[#24415C]/15 bg-[#FFFDF2] p-2.5 text-center">
+              <div className="flex items-center justify-between text-[9px] font-black tracking-wider text-[#B45309] uppercase">
+                <span>ACHIEVEMENT SHOWCASE</span>
+                <span className="tabular-nums text-[#24415C]">
+                  {achievementSnapshot.stats.earnedAchievementPoints} PTS ·{' '}
+                  {achievementSnapshot.stats.rank.label}
+                </span>
+              </div>
+              <AchievementShowcaseStrip
+                records={showcaseRecords}
+                showEmptySlots={true}
+                effectsEnabled={badgeEffectsEnabled}
+                reducedMotion={reducedMotion}
+                onManageClick={() => setShowShowcasePicker(true)}
+                className="mt-2"
+              />
+            </div>
+          )}
+
           {selectedSlot === 'solo' && (
             <button
               type="button"
@@ -500,6 +547,113 @@ export const PlayerProfileScreen: React.FC<PlayerProfileScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 3-SLOT ACHIEVEMENT SHOWCASE PICKER MODAL */}
+      {showShowcasePicker && (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-[#24415C]/55 p-4 backdrop-blur-[2px]"
+        >
+          <div className="anim-panel-pop game-panel flex max-h-[82vh] w-full max-w-[336px] flex-col p-4 text-left">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-display text-lg font-bold text-[#24415C]">
+                  ACHIEVEMENT SHOWCASE
+                </h3>
+                <p className="text-[10px] font-bold text-[#24415C]/65">
+                  Pilih hingga 3 achievement terbuka untuk dipajang ({showcaseIds.length}/3).
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close Showcase Picker"
+                onClick={() => {
+                  audioManager.playButton();
+                  setShowShowcasePicker(false);
+                }}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-2 border-[#24415C]/25 bg-white text-[#24415C]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 flex-1 space-y-2 overflow-y-auto pr-1">
+              {unlockedRecords.length === 0 ? (
+                <div className="rounded-2xl bg-[#EEF7FF] py-6 text-center text-xs font-bold text-[#24415C]/70">
+                  Buka achievement terlebih dahulu untuk dipajang di Showcase!
+                </div>
+              ) : (
+                unlockedRecords.map((rec) => {
+                  const pinned = showcaseIds.includes(rec.id);
+                  const badge = rec.badgeId ? getBadgeById(rec.badgeId) : null;
+                  const cfg = ACHIEVEMENT_RARITY_CONFIG[rec.rarity];
+                  return (
+                    <button
+                      key={rec.id}
+                      type="button"
+                      onClick={() => {
+                        audioManager.playButton();
+                        const res = achievementManager.toggleShowcaseAchievement(rec.id);
+                        onUpdateShowcase?.(res.updated);
+                      }}
+                      className={`flex w-full items-center gap-2.5 rounded-2xl border-2 p-2.5 text-left transition-colors ${
+                        pinned
+                          ? 'border-[#24415C] bg-[#FFF9DB] shadow-[0_2px_0_#24415C]'
+                          : 'border-[#24415C]/20 bg-white'
+                      }`}
+                    >
+                      {badge ? (
+                        <BadgeArtwork
+                          badge={badge}
+                          size={38}
+                          effectsEnabled={badgeEffectsEnabled}
+                          reducedMotion={reducedMotion}
+                        />
+                      ) : (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#24415C] bg-[#EEF7FF] text-[#24415C]">
+                          {renderAchievementIcon(rec.icon, 'h-4 w-4')}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-display text-sm font-bold text-[#24415C]">
+                          {rec.name}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[9px] font-black">
+                          <span className={`rounded px-1.5 py-0.5 ${cfg.badgeBg} ${cfg.badgeText}`}>
+                            {cfg.label}
+                          </span>
+                          <span className="text-[#24415C]/65">+{rec.points} PTS</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 text-[10px] font-black ${
+                          pinned
+                            ? 'border-[#24415C] bg-[#FFD84D] text-[#24415C]'
+                            : 'border-[#24415C]/25 bg-[#EEF7FF] text-[#24415C]/75'
+                        }`}
+                      >
+                        <Star className={`h-3 w-3 ${pinned ? 'fill-[#24415C]' : ''}`} />
+                        <span>{pinned ? 'PINNED' : 'PIN'}</span>
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                audioManager.playButton();
+                setShowShowcasePicker(false);
+              }}
+              className="btn-base btn-primary mt-3 min-h-[44px] w-full text-sm"
+            >
+              DONE
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

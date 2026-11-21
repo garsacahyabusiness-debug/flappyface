@@ -21,7 +21,11 @@ import {
   PlayerProgressProfile,
 } from '../game/progression/PlayerProgressTypes';
 import { PLAYER_RANK_TIERS } from '../game/progression/RankManager';
-import { getTitleById, TITLE_RARITY_STYLE, TITLE_REGISTRY } from '../game/progression/TitleRegistry';
+import {
+  ALL_TITLES_REGISTRY,
+  getTitleById,
+  TITLE_RARITY_STYLE,
+} from '../game/progression/TitleRegistry';
 import { LevelRewardTrack } from './LevelRewardTrack';
 import { XPHistoryList } from './XPHistoryList';
 
@@ -335,12 +339,12 @@ export const PlayerProgressionScreen: React.FC<PlayerProgressionScreenProps> = (
                     <span>PLAYER TITLES</span>
                   </span>
                   <span className="tabular-nums text-[#24415C]/65">
-                    {profile.unlockedTitleIds.length}/{TITLE_REGISTRY.length}
+                    {profile.unlockedTitleIds.length}/{ALL_TITLES_REGISTRY.length}
                   </span>
                 </div>
 
                 <div className="mt-2 space-y-2">
-                  {TITLE_REGISTRY.map((titleDef) => {
+                  {ALL_TITLES_REGISTRY.map((titleDef) => {
                     const unlocked = profile.unlockedTitleIds.includes(titleDef.id);
                     const equipped = profile.equippedTitleId === titleDef.id;
                     const style = TITLE_RARITY_STYLE[titleDef.rarity];

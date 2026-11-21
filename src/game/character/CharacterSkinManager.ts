@@ -10,7 +10,9 @@ export type SkinId =
   | 'halloween'
   | 'retro_pixel'
   | 'galaxy'
-  | 'rainbow';
+  | 'rainbow'
+  | 'emerald'
+  | 'crystal';
 
 export type SkinAccessoryOverlay =
   | 'none'
@@ -157,6 +159,32 @@ export const SKIN_REGISTRY: readonly SkinDefinition[] = [
     accessoryOverlay: 'halo_star',
     tintOverlay: null,
   },
+  {
+    id: 'emerald',
+    name: 'EMERALD WING',
+    description: 'Kilau zamrud hutan tropis yang sejuk dan elegan.',
+    unlockRequirementLabel: 'Reward Shop atau Achievement',
+    badgeColor: '#10B981',
+    rimColor: '#059669',
+    glowColor: 'rgba(16, 185, 129, 0.52)',
+    trailColors: ['#34D399', '#A7F3D0', '#FFFFFF'],
+    particleKind: 'star',
+    accessoryOverlay: 'none',
+    tintOverlay: 'rgba(16, 185, 129, 0.12)',
+  },
+  {
+    id: 'crystal',
+    name: 'CRYSTAL ICE',
+    description: 'Lapisan kristal biru berkilau dengan percikan es murni.',
+    unlockRequirementLabel: 'Reward Shop atau Achievement',
+    badgeColor: '#06B6D4',
+    rimColor: '#0284C7',
+    glowColor: 'rgba(6, 182, 212, 0.56)',
+    trailColors: ['#BAE6FD', '#22D3EE', '#FFFFFF'],
+    particleKind: 'star',
+    accessoryOverlay: 'halo_star',
+    tintOverlay: 'rgba(14, 165, 233, 0.14)',
+  },
 ];
 
 export const SKIN_MAP: ReadonlyMap<SkinId, SkinDefinition> = new Map(
@@ -266,7 +294,7 @@ export class CharacterSkinManager {
 
   public unlockMilestoneSkin(
     skinId: SkinId,
-    source: 'milestone' | 'level_reward' = 'milestone'
+    source: 'milestone' | 'level_reward' | 'shop' | 'achievement' = 'milestone'
   ): boolean {
     if (!SKIN_MAP.has(skinId) || this.unlockedSkins.has(skinId)) {
       return false;
@@ -276,7 +304,11 @@ export class CharacterSkinManager {
     this.notify();
     if (source !== 'level_reward') {
       const def = getSkinById(skinId);
-      playerProgressionManager.recordSkinUnlockXP(def.id, def.name, source);
+      playerProgressionManager.recordSkinUnlockXP(
+        def.id,
+        def.name,
+        source === 'shop' || source === 'achievement' ? 'milestone' : source
+      );
     }
     return true;
   }

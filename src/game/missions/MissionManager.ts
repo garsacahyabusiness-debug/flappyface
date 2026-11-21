@@ -174,6 +174,26 @@ export class MissionManager {
 
   private listeners = new Set<(snapshot: MissionSnapshot) => void>();
   private notificationListeners = new Set<(note: MissionCompletionNotification) => void>();
+  private externalAchievementHooks = new Set<
+    (
+      ev:
+        | { type: 'mission_completed'; category: 'daily' | 'weekly' | 'special'; perfectDay: boolean }
+        | { type: 'streak_updated'; currentStreak: number; bestStreak: number }
+    ) => void
+  >();
+
+  public onExternalAchievementEvent(
+    fn: (
+      ev:
+        | { type: 'mission_completed'; category: 'daily' | 'weekly' | 'special'; perfectDay: boolean }
+        | { type: 'streak_updated'; currentStreak: number; bestStreak: number }
+    ) => void
+  ): () => void {
+    this.externalAchievementHooks.add(fn);
+    return () => {
+      this.externalAchievementHooks.delete(fn);
+    };
+  }
 
   constructor(options: MissionManagerOptions = {}) {
     this.nowProvider = options.nowProvider ?? (() => Date.now());
@@ -598,6 +618,18 @@ export class MissionManager {
         mission.reward.xp
       );
     }
+
+    const perfectDay =
+      mission.category === 'daily' &&
+      this.dailyMissions.length > 0 &&
+      this.dailyMissions.every((m) => m.completed);
+    for (const hook of this.externalAchievementHooks) {
+      hook({
+        type: 'mission_completed',
+        category: mission.category,
+        perfectDay,
+      });
+    }
   }
 
   private emitNotification(mission: MissionInstance): void {
@@ -806,6 +838,16 @@ export class MissionManager {
 
     this.save();
     this.notify();
+
+    if (streakUpdated) {
+      for (const hook of this.externalAchievementHooks) {
+        hook({
+          type: 'streak_updated',
+          currentStreak: this.streak.currentStreak,
+          bestStreak: this.streak.bestStreak,
+        });
+      }
+    }
 
     return {
       success: true,

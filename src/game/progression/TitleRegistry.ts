@@ -167,8 +167,64 @@ export const TITLE_REGISTRY: readonly TitleDefinition[] = [
   },
 ];
 
+export const ACHIEVEMENT_BONUS_TITLES: readonly TitleDefinition[] = [
+  {
+    id: 'flappy_god',
+    name: 'Flappy God',
+    rarity: 'LEGENDARY',
+    description: 'Penguasa tertinggi langit yang tak tergoyahkan.',
+    unlockRequirementLabel: 'Achievement: FLAPPY GOD (Total 5.000 Pipa)',
+    sourceLabel: 'Achievement',
+  },
+  {
+    id: 'score_250_king',
+    name: 'Sky Sovereign',
+    rarity: 'LEGENDARY',
+    description: 'Mencapai rekor luar biasa 250 poin dalam satu penerbangan.',
+    unlockRequirementLabel: 'Achievement: 250 Poin Satu Run',
+    sourceLabel: 'Achievement',
+  },
+  {
+    id: 'full_flock_master',
+    name: 'Flock Sovereign',
+    rarity: 'LEGENDARY',
+    description: 'Mengumpulkan seluruh burung & skin ikonik.',
+    unlockRequirementLabel: 'Achievement: FULL FLOCK',
+    sourceLabel: 'Achievement',
+  },
+  {
+    id: 'secret_explorer',
+    name: 'Secret Explorer',
+    rarity: 'LEGENDARY',
+    description: 'Pemburu rahasia sejati yang mengungkap tantangan tersembunyi.',
+    unlockRequirementLabel: 'Achievement: SECRET EXPLORER',
+    sourceLabel: 'Achievement',
+  },
+  {
+    id: 'grand_achiever',
+    name: 'Grand Achiever',
+    rarity: 'LEGENDARY',
+    description: 'Menyelesaikan hampir seluruh koleksi Achievement FLAPPY FACE.',
+    unlockRequirementLabel: 'Achievement: GRAND MASTER',
+    sourceLabel: 'Achievement',
+  },
+  {
+    id: 'unstoppable_365',
+    name: 'Immortal Streak',
+    rarity: 'LEGENDARY',
+    description: 'Dedikasi harian tanpa putus selama satu tahun penuh.',
+    unlockRequirementLabel: 'Achievement: UNSTOPPABLE (Streak 365 Hari)',
+    sourceLabel: 'Achievement',
+  },
+];
+
+export const ALL_TITLES_REGISTRY: readonly TitleDefinition[] = [
+  ...TITLE_REGISTRY,
+  ...ACHIEVEMENT_BONUS_TITLES,
+];
+
 export const TITLE_MAP: ReadonlyMap<string, TitleDefinition> = new Map(
-  TITLE_REGISTRY.map((t) => [t.id, t])
+  ALL_TITLES_REGISTRY.map((t) => [t.id, t])
 );
 
 export function getTitleById(id: string | null | undefined): TitleDefinition {
@@ -184,7 +240,7 @@ export function findTitleByNameOrId(nameOrId: string | null | undefined): TitleD
     return TITLE_MAP.get(nameOrId)!;
   }
   const normalized = nameOrId.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
-  for (const def of TITLE_REGISTRY) {
+  for (const def of ALL_TITLES_REGISTRY) {
     if (
       def.name.toLowerCase() === normalized ||
       def.id.replace(/_/g, ' ') === normalized
