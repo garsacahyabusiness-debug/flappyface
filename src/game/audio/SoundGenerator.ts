@@ -323,6 +323,14 @@ export class SoundGenerator {
     });
   }
 
+  public playChallengeComplete(ctx: AudioContext, output: GainNode): void {
+    const now = ctx.currentTime;
+    const notes = [659.25, 880.0, 1046.5, 1318.51, 1760.0];
+    notes.forEach((freq, idx) => {
+      this.playTone(ctx, output, freq, 'triangle', now + idx * 0.05, 0.21, 0.18);
+    });
+  }
+
   private playTone(
     ctx: AudioContext,
     output: GainNode,

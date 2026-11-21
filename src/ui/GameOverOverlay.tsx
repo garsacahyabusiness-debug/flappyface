@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Home, RotateCcw, Share2, Trophy } from 'lucide-react';
+import { Award, Check, Flame, Home, RotateCcw, Share2, Target, Trophy } from 'lucide-react';
 import { audioManager } from '../game/audio/AudioManager';
 import { getCharacterById } from '../game/character/CharacterRegistry';
 import { SkinId } from '../game/character/CharacterSkinManager';
@@ -17,6 +17,11 @@ interface GameOverOverlayProps {
   runCoins?: number;
   runGems?: number;
   runXP?: number;
+  previousRunScore?: number;
+  rivalName?: string;
+  rivalTargetScore?: number;
+  activeChallengeTitle?: string | null;
+  onOpenCompetitiveHub?: () => void;
   onRetry: () => void;
   onHome: () => void;
 }
@@ -32,6 +37,11 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
   runCoins = 0,
   runGems = 0,
   runXP = 0,
+  previousRunScore = 0,
+  rivalName,
+  rivalTargetScore,
+  activeChallengeTitle = null,
+  onOpenCompetitiveHub,
   onRetry,
   onHome,
 }) => {
@@ -144,6 +154,44 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
           </div>
         </div>
 
+        {(rivalTargetScore !== undefined || activeChallengeTitle) && (
+          <div className="mt-2 rounded-xl border-2 border-[#24415C]/15 bg-[#F8FBFF] px-3 py-1.5 text-[10px] font-black text-[#24415C]">
+            {activeChallengeTitle && (
+              <div className="mb-1 flex items-center justify-center gap-1 text-[#0369A1]">
+                <Flame className="h-3 w-3 text-[#F59E0B]" />
+                <span>Challenge: {activeChallengeTitle}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[#24415C]/65 tabular-nums">
+                Prev Run:{' '}
+                <strong
+                  className={
+                    score >= previousRunScore ? 'text-emerald-700' : 'text-[#24415C]'
+                  }
+                >
+                  {previousRunScore}
+                </strong>
+              </span>
+              {rivalTargetScore !== undefined && (
+                <span className="inline-flex items-center gap-1 tabular-nums">
+                  <Target className="h-3 w-3 text-[#FF6B6B]" />
+                  <span className="max-w-[95px] truncate">{rivalName ?? 'Rival'}:</span>
+                  <strong
+                    className={
+                      score > rivalTargetScore ? 'text-emerald-600' : 'text-[#FF6B6B]'
+                    }
+                  >
+                    {score > rivalTargetScore
+                      ? `+${score - rivalTargetScore}`
+                      : `${score}/${rivalTargetScore}`}
+                  </strong>
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         {(runCoins > 0 || runGems > 0 || runXP > 0) && (
           <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2.5 rounded-xl border-2 border-[#24415C]/15 bg-[#FFF9DB] px-3 py-1 text-xs font-black text-[#24415C]">
             <span className="text-[10px] tracking-wider text-[#24415C]/65 uppercase">Earned</span>
@@ -210,6 +258,20 @@ export const GameOverOverlay: React.FC<GameOverOverlayProps> = ({
               <span>SHARE</span>
             </button>
           </div>
+
+          {onOpenCompetitiveHub && (
+            <button
+              type="button"
+              onClick={() => {
+                audioManager.playButton();
+                onOpenCompetitiveHub();
+              }}
+              className="btn-base btn-secondary min-h-[40px] w-full text-xs"
+            >
+              <Award className="h-4 w-4 text-[#F59E0B]" />
+              <span>COMPETITIVE HUB</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

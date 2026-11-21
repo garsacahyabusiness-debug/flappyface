@@ -12,6 +12,7 @@ import {
   Settings,
   Sparkles,
   Swords,
+  Target,
   Trophy,
   User,
   Users,
@@ -59,6 +60,11 @@ interface MainMenuProps {
   achievementRankLabel?: string;
   badgeEffectsEnabled?: boolean;
   reducedMotion?: boolean;
+  competitiveRankLabel?: string;
+  competitiveRankColor?: string;
+  competitivePoints?: number;
+  unclaimedChallenges?: number;
+  onCompetitiveHub?: () => void;
   onPlay: () => void;
   onTwoPlayer: () => void;
   onTournament: () => void;
@@ -106,6 +112,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   achievementRankLabel,
   badgeEffectsEnabled = true,
   reducedMotion = false,
+  competitiveRankLabel,
+  competitiveRankColor = '#FFD84D',
+  competitivePoints = 0,
+  unclaimedChallenges = 0,
+  onCompetitiveHub,
   onPlay,
   onTwoPlayer,
   onTournament,
@@ -217,6 +228,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               <span className="tabular-nums text-[#3998F7]">{achievementPoints}P</span>
             </button>
           )}
+
+          {onCompetitiveHub && competitiveRankLabel && (
+            <button
+              type="button"
+              onClick={() => {
+                audioManager.playButton();
+                onCompetitiveHub();
+              }}
+              className="inline-flex items-center gap-1 rounded-2xl border-2 border-[#24415C] bg-white/95 px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_3px_0_#24415C]"
+            >
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full border border-[#24415C]"
+                style={{ backgroundColor: competitiveRankColor }}
+              />
+              <span>{competitiveRankLabel}</span>
+              {competitivePoints > 0 && (
+                <span className="tabular-nums text-[#0369A1]">{competitivePoints}</span>
+              )}
+            </button>
+          )}
         </div>
       </header>
 
@@ -323,6 +354,28 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               </span>
             )}
           </button>
+
+          {onCompetitiveHub && (
+            <button
+              type="button"
+              onClick={() => {
+                audioManager.playButton();
+                onCompetitiveHub();
+              }}
+              className="btn-base btn-secondary min-h-[34px] rounded-full px-2.5 py-0.5 text-[10px]"
+            >
+              <Target className="h-3.5 w-3.5 shrink-0 text-[#FF6B6B]" />
+              <span>COMPETITIVE</span>
+              {unclaimedChallenges > 0 && (
+                <span
+                  aria-label={`${unclaimedChallenges} challenge rewards ready`}
+                  className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full border border-[#24415C] bg-[#FF6B6B] px-1 text-[9px] font-black tabular-nums text-white"
+                >
+                  {unclaimedChallenges}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 

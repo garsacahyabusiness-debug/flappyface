@@ -40,6 +40,8 @@ export interface GameSettings {
   achievementSoundsEnabled: boolean;
   achievementUnlockAnimationEnabled: boolean;
   achievementBadgeEffectsEnabled: boolean;
+  competitiveNotificationsEnabled: boolean;
+  ghostRunEnabled: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'flappy_face_settings';
@@ -84,6 +86,8 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   achievementSoundsEnabled: true,
   achievementUnlockAnimationEnabled: true,
   achievementBadgeEffectsEnabled: true,
+  competitiveNotificationsEnabled: true,
+  ghostRunEnabled: true,
 };
 
 function clamp01(val: unknown, fallback: number): number {
@@ -316,6 +320,14 @@ export class SettingsManager {
           typeof parsed.achievementBadgeEffectsEnabled === 'boolean'
             ? parsed.achievementBadgeEffectsEnabled
             : DEFAULT_GAME_SETTINGS.achievementBadgeEffectsEnabled,
+        competitiveNotificationsEnabled:
+          typeof parsed.competitiveNotificationsEnabled === 'boolean'
+            ? parsed.competitiveNotificationsEnabled
+            : DEFAULT_GAME_SETTINGS.competitiveNotificationsEnabled,
+        ghostRunEnabled:
+          typeof parsed.ghostRunEnabled === 'boolean'
+            ? parsed.ghostRunEnabled
+            : DEFAULT_GAME_SETTINGS.ghostRunEnabled,
       };
     } catch {
       return { ...DEFAULT_GAME_SETTINGS };

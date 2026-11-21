@@ -8,6 +8,7 @@ export type GameState =
   | 'LEADERBOARD'
   | 'ACHIEVEMENTS'
   | 'MISSION_CENTER'
+  | 'COMPETITIVE_HUB'
   | 'PLAYER_PROGRESSION'
   | 'PLAYER_PROFILE'
   | 'STATS'

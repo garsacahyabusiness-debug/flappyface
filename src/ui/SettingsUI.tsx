@@ -7,6 +7,7 @@ import {
   CloudRain,
   Compass,
   Gauge,
+  Ghost,
   Info,
   Layers,
   Lock,
@@ -914,6 +915,60 @@ export const SettingsUI: React.FC<SettingsUIProps> = ({
                     settingsManager.update({
                       achievementBadgeEffectsEnabled: !settings.achievementBadgeEffectsEnabled,
                     });
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* COMPETITIVE & GHOST RUN SECTION */}
+          <section className="rounded-2xl bg-[#EEF7FF] p-3.5">
+            <h3 className="text-[11px] font-black tracking-wider text-[#3998F7] uppercase">
+              COMPETITIVE &amp; GHOST RUN
+            </h3>
+
+            <div className="mt-2.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Bell className="h-4 w-4 text-[#F59E0B]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">
+                      COMPETITIVE NOTIFICATIONS
+                    </div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      New PB · Rival Defeated · Rank Up
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.competitiveNotificationsEnabled}
+                  label="Toggle Competitive Notifications"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({
+                      competitiveNotificationsEnabled:
+                        !settings.competitiveNotificationsEnabled,
+                    });
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Ghost className="h-4 w-4 text-[#3998F7]" />
+                  <div>
+                    <div className="text-sm font-extrabold text-[#24415C]">GHOST RUN</div>
+                    <div className="text-[10px] font-bold text-[#24415C]/60">
+                      Tampilkan bayangan PB selama penerbangan
+                    </div>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={settings.ghostRunEnabled}
+                  label="Toggle Ghost Run Playback"
+                  onToggle={() => {
+                    audioManager.playButton();
+                    settingsManager.update({ ghostRunEnabled: !settings.ghostRunEnabled });
                   }}
                 />
               </div>

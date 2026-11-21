@@ -21,6 +21,7 @@ interface LeaderboardUIProps {
   players: LeaderboardPlayerEntry[];
   history: MatchHistoryEntry[];
   singlePlayerBest: number;
+  onOpenCompetitiveHub?: () => void;
   onBack: () => void;
 }
 
@@ -44,6 +45,7 @@ export const LeaderboardUI: React.FC<LeaderboardUIProps> = ({
   players,
   history,
   singlePlayerBest,
+  onOpenCompetitiveHub,
   onBack,
 }) => {
   const [tab, setTab] = useState<LeaderboardTab>('ranking');
@@ -130,6 +132,23 @@ export const LeaderboardUI: React.FC<LeaderboardUIProps> = ({
                     {singlePlayerBest}
                   </div>
                 </div>
+
+                {onOpenCompetitiveHub && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      audioManager.playButton();
+                      onOpenCompetitiveHub();
+                    }}
+                    className="flex min-h-[42px] w-full items-center justify-between rounded-2xl border-2 border-[#24415C] bg-[#EEF7FF] px-3.5 py-2 text-xs font-black text-[#24415C] shadow-[0_2px_0_#24415C]"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Swords className="h-4 w-4 text-[#3998F7]" />
+                      <span>COMPETITIVE HUB · RANKING &amp; CHALLENGES</span>
+                    </span>
+                    <span className="rounded-lg bg-[#FFD84D] px-2 py-0.5 text-[10px]">OPEN</span>
+                  </button>
+                )}
 
                 {players.length === 0 ? (
                   <div className="rounded-2xl bg-[#EEF7FF] px-4 py-8 text-center">

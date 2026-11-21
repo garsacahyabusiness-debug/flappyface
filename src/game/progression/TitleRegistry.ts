@@ -216,6 +216,14 @@ export const ACHIEVEMENT_BONUS_TITLES: readonly TitleDefinition[] = [
     unlockRequirementLabel: 'Achievement: UNSTOPPABLE (Streak 365 Hari)',
     sourceLabel: 'Achievement',
   },
+  {
+    id: 'competitive_titan',
+    name: 'Competitive Titan',
+    rarity: 'LEGENDARY',
+    description: 'Mencapai Competitive Rank Legend sebagai penantang terkuat.',
+    unlockRequirementLabel: 'Achievement: ULTIMATE CHAMPION (Rank Legend)',
+    sourceLabel: 'Competitive',
+  },
 ];
 
 export const ALL_TITLES_REGISTRY: readonly TitleDefinition[] = [

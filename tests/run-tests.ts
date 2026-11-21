@@ -152,7 +152,7 @@ async function runTests(): Promise<void> {
       sanitizePlayerName,
       saveStoredPlayerNames,
     },
-    { LeaderboardManager },
+    { LeaderboardManager, leaderboardManager },
     { AchievementManager },
     { GalleryController },
     { CharacterStorage },
@@ -206,6 +206,14 @@ async function runTests(): Promise<void> {
     { ACHIEVEMENT_CHAINS },
     { FIXED_BADGE_REGISTRY },
     { REWARD_SHOP_ITEMS, rewardShopManager },
+    { CHALLENGE_POOL, CHALLENGE_REWARD_PRESETS, DAILY_COMPETITIVE_POOL, WEEKLY_COMPETITIVE_POOL },
+    { COMPETITIVE_RANK_TIERS, computeCompetitiveRank, CompetitiveRankManager },
+    { RecordManager },
+    { ScoreHistoryManager, MAX_SCORE_HISTORY_RUNS },
+    { AI_RIVALS, RivalManager },
+    { ChallengeManager },
+    { GhostRecordingManager },
+    { CompetitiveManager, competitiveManager },
   ] = await Promise.all([
     import('../src/game/Config'),
     import('../src/game/Physics'),
@@ -254,6 +262,14 @@ async function runTests(): Promise<void> {
     import('../src/game/achievements/AchievementChains'),
     import('../src/game/achievements/BadgeRegistry'),
     import('../src/game/achievements/RewardShopManager'),
+    import('../src/game/competitive/ChallengeRegistry'),
+    import('../src/game/competitive/CompetitiveRankManager'),
+    import('../src/game/competitive/RecordManager'),
+    import('../src/game/competitive/ScoreHistoryManager'),
+    import('../src/game/competitive/RivalManager'),
+    import('../src/game/competitive/ChallengeManager'),
+    import('../src/game/competitive/GhostRecordingManager'),
+    import('../src/game/competitive/CompetitiveManager'),
   ]);
 
   let passed = 0;
@@ -2299,10 +2315,10 @@ async function runTests(): Promise<void> {
     assert.equal(recoveredPm.getProfile('solo').totalXP, 0);
   });
 
-  // 38. Update 6 Registry Completeness: 122 Achievements, 11 Categories, 22 Hidden, 5 Rarities, 28 Badges, 6 Chains
-  await runCase('Update 6 Registry exposes 122 achievements across 11 categories, 5 rarities, 28 badges, and 6 chains', () => {
-    assert.ok(ACHIEVEMENT_DEFINITIONS.length >= 100);
-    assert.equal(ACHIEVEMENT_DEFINITIONS.length, 122);
+  // 38. Update 6 & 7 Registry Completeness: 132 Achievements, 11 Categories, 22+ Hidden, 5 Rarities, 30 Badges, 6 Chains
+  await runCase('Achievement & Badge registries expose all 132 achievements across 11 categories, 5 rarities, 30 badges, and 6 chains', () => {
+    assert.ok(ACHIEVEMENT_DEFINITIONS.length >= 132);
+    assert.equal(ACHIEVEMENT_DEFINITIONS.length, 132);
 
     const uniqueIds = new Set(ACHIEVEMENT_DEFINITIONS.map((d) => d.id));
     assert.equal(uniqueIds.size, ACHIEVEMENT_DEFINITIONS.length, 'Achievement IDs must be unique');
@@ -2322,12 +2338,12 @@ async function runTests(): Promise<void> {
     assert.equal(ACHIEVEMENT_RARITY_CONFIG.LEGENDARY.xp, 500);
     assert.equal(ACHIEVEMENT_RARITY_CONFIG.LEGENDARY.gems, 10);
 
-    assert.equal(FIXED_BADGE_REGISTRY.length, 28);
+    assert.equal(FIXED_BADGE_REGISTRY.length, 30);
     const badgeCats = new Set(FIXED_BADGE_REGISTRY.map((b) => b.category));
     assert.equal(badgeCats.size, 7, 'All 7 badge categories must be represented');
 
     assert.equal(ACHIEVEMENT_CHAINS.length, 6);
-    assert.ok(ALL_TITLES_REGISTRY.length >= TITLE_REGISTRY.length + 6);
+    assert.ok(ALL_TITLES_REGISTRY.length >= TITLE_REGISTRY.length + 7);
   });
 
   // 39. Near-Miss Read-Only Detection Preserves Collision Hitbox Unchanged
@@ -2573,7 +2589,545 @@ async function runTests(): Promise<void> {
     storage.set('flappy_face_achievements', '{invalid-json!');
     const recovered = new AchievementManager();
     assert.equal(recovered.getUnlockedCount(), 0);
-    assert.equal(recovered.getAll().length, 122);
+    assert.equal(recovered.getAll().length, 132);
+  });
+
+  // 43. Update 7 Personal Record System (all 12 record categories, PB delta/% improvement, zero-effort abort exclusion)
+  await runCase('Personal Record System tracks all record categories, computes PB break delta, and excludes zero-effort runs', () => {
+    const rm = new RecordManager();
+
+    // Zero-effort run (<0.4s, score 0, pipes 0) is rejected
+    const aborted = rm.recordCompletedRun({
+      runId: 'run_abort',
+      score: 0,
+      pipesPassed: 0,
+      durationSec: 0.2,
+      coinsCollected: 0,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'solo',
+      usedPowerUp: false,
+      powerUpCount: 0,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: false,
+      activeChallengeId: null,
+      nowMs: 1700000000000,
+    });
+    assert.equal(aborted.brokenRecords.length, 0);
+    assert.equal(rm.getTotalRecordsCount(), 0);
+
+    // First valid Solo run in Green Valley without power-ups
+    const run1 = rm.recordCompletedRun({
+      runId: 'run_1',
+      score: 10,
+      pipesPassed: 10,
+      durationSec: 15.5,
+      coinsCollected: 4,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'solo',
+      usedPowerUp: false,
+      powerUpCount: 0,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: true,
+      activeChallengeId: null,
+      nowMs: 1700000010000,
+    });
+    assert.ok(run1.highestBestEvent);
+    assert.equal(run1.highestBestEvent!.previousScore, 0);
+    assert.equal(run1.highestBestEvent!.newScore, 10);
+    assert.equal(rm.getRecord('green_valley_best', 'green_valley')?.score, 10);
+    assert.equal(rm.getRecord('no_powerup_best', 'no_powerup')?.score, 10);
+    assert.equal(rm.getRecord('solo_best', 'solo')?.score, 10);
+    assert.equal(rm.getRecord('best_perfect_run', 'global')?.score, 10);
+    assert.equal(rm.getPersonalBestBreaksCount(), 0, 'First baseline sets PB without counting a break');
+
+    // Break PB in different world + Challenge Mode win (tests delta, % improvement, challenge_best, fastest_challenge_completion)
+    const run2 = rm.recordCompletedRun(
+      {
+        runId: 'run_2',
+        score: 25,
+        pipesPassed: 26,
+        durationSec: 21.4,
+        coinsCollected: 9,
+        worldId: 'neon_city',
+        characterId: 'cyber_duck',
+        skinId: 'default',
+        gameMode: 'challenge',
+        usedPowerUp: true,
+        powerUpCount: 1,
+        usedShield: true,
+        usedSecondChance: false,
+        collided: true,
+        activeChallengeId: 'ch_pipe_rush_normal',
+        nowMs: 1700000050000,
+      },
+      { challengeCompletedThisRun: true }
+    );
+    assert.ok(run2.highestBestEvent);
+    assert.equal(run2.highestBestEvent!.previousScore, 10);
+    assert.equal(run2.highestBestEvent!.newScore, 25);
+    assert.equal(run2.highestBestEvent!.delta, 15);
+    assert.equal(run2.highestBestEvent!.improvementPercent, 150);
+    assert.equal(rm.getPersonalBestBreaksCount(), 1);
+    assert.equal(rm.getRecord('world_best', 'world:neon_city')?.score, 25);
+    assert.equal(rm.getRecord('character_best', 'char:cyber_duck')?.score, 25);
+    assert.equal(rm.getRecord('challenge_best', 'challenge')?.score, 25);
+    assert.equal(rm.getRecord('longest_pipe_streak', 'global')?.value, 26);
+    assert.equal(rm.getRecord('longest_survival', 'global')?.value, 21.4);
+    assert.equal(
+      rm.getRecord('fastest_challenge_completion', 'challenge:ch_pipe_rush_normal')?.value,
+      21.4
+    );
+    // Shield was used on run2, so no_powerup_best & best_perfect_run remain at 10
+    assert.equal(rm.getRecord('no_powerup_best', 'no_powerup')?.score, 10);
+    assert.equal(rm.getRecord('best_perfect_run', 'global')?.score, 10);
+
+    // Tournament best record type
+    rm.recordCompletedRun({
+      runId: 'run_t',
+      score: 18,
+      pipesPassed: 18,
+      durationSec: 19,
+      coinsCollected: 2,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'bo3',
+      usedPowerUp: false,
+      powerUpCount: 0,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: true,
+      activeChallengeId: null,
+      nowMs: 1700000090000,
+    });
+    assert.equal(rm.getRecord('tournament_best', 'tournament')?.score, 18);
+  });
+
+  // 44. Update 7 Score History (20-run cap, chronological ordering, average/median/trend calculations)
+  await runCase('Score History stores up to 20 runs chronologically and calculates average, median, and trend accurately', () => {
+    const shm = new ScoreHistoryManager();
+    assert.equal(shm.getStats().totalRecordedRuns, 0);
+    assert.equal(shm.getStats().recentTrend, 'insufficient');
+
+    // Insert 24 runs rising from 4..27; newest 20 (8..27) should be retained
+    for (let i = 1; i <= 24; i++) {
+      shm.addCompletedRun({
+        runId: `hist_${i}`,
+        score: i + 3,
+        pipesPassed: i + 3,
+        durationSec: 10 + i,
+        coinsCollected: 1,
+        worldId: 'green_valley',
+        characterId: 'classic_bird',
+        skinId: 'default',
+        gameMode: 'solo',
+        usedPowerUp: false,
+        powerUpCount: 0,
+        usedShield: false,
+        usedSecondChance: false,
+        collided: true,
+        activeChallengeId: null,
+        nowMs: 1700000000000 + i * 1000,
+      });
+    }
+
+    const list = shm.getHistory();
+    assert.equal(list.length, MAX_SCORE_HISTORY_RUNS);
+    assert.equal(list[0].score, 27, 'Most recent run must be first');
+    assert.equal(list[19].score, 8, 'Oldest retained run must be 20th');
+
+    const stats = shm.getStats();
+    assert.equal(stats.totalRecordedRuns, 20);
+    assert.equal(stats.bestRun, 27);
+    assert.equal(stats.averageScore, 17.5);
+    assert.equal(stats.medianScore, 17.5);
+    assert.equal(stats.recentTrend, 'up');
+    assert.ok(stats.trendDelta > 0);
+  });
+
+  // 45. Update 7 Rival System (PB, P2 Local, 5 AI Rivals, W/L/D, streaks, zero physics mutation)
+  await runCase('Rival System exposes PB, Player 2 Local, and 5 labeled AI targets with real W/L/D tracking', () => {
+    storage.clear();
+    const riv = new RivalManager();
+    assert.equal(AI_RIVALS.length, 5);
+    assert.ok(AI_RIVALS.every((a) => a.isAI));
+
+    const available = riv.getAvailableRivals(20);
+    assert.ok(available.some((r) => r.id === 'personal_best' && r.targetScore === 20));
+    assert.ok(available.some((r) => r.id === 'player2_local'));
+    assert.ok(available.some((r) => r.id === 'ai_legend' && r.targetScore === 70));
+
+    // Win, draw, loss against ai_rookie (target 8)
+    riv.selectRival('ai_rookie', 20);
+    const w1 = riv.evaluateRunAgainstRival({
+      score: 12,
+      previousPersonalBest: 20,
+      worldId: 'green_valley',
+      gameMode: 'solo',
+      nowMs: 1700000100000,
+    });
+    assert.equal(w1.defeated, true);
+    assert.equal(w1.gap, 4);
+
+    const d1 = riv.evaluateRunAgainstRival({
+      score: 8,
+      previousPersonalBest: 20,
+      worldId: 'green_valley',
+      gameMode: 'solo',
+      nowMs: 1700000200000,
+    });
+    assert.equal(d1.result, 'draw');
+
+    const l1 = riv.evaluateRunAgainstRival({
+      score: 3,
+      previousPersonalBest: 20,
+      worldId: 'green_valley',
+      gameMode: 'solo',
+      nowMs: 1700000300000,
+    });
+    assert.equal(l1.result, 'loss');
+
+    const st = riv.getStanding('ai_rookie');
+    assert.equal(st.wins, 1);
+    assert.equal(st.draws, 1);
+    assert.equal(st.losses, 1);
+    assert.equal(st.currentStreak, 0);
+    assert.equal(st.bestStreak, 1);
+    assert.equal(st.bestGap, 4);
+
+    // Legend AI defeat counter
+    riv.selectRival('ai_legend', 20);
+    const leg = riv.evaluateRunAgainstRival({
+      score: 75,
+      previousPersonalBest: 20,
+      worldId: 'green_valley',
+      gameMode: 'solo',
+      nowMs: 1700000400000,
+    });
+    assert.equal(leg.defeatedLegendAI, true);
+    assert.equal(riv.getLegendDefeatedCount(), 1);
+  });
+
+  // 46. Update 7 Challenges: Rotation (Daily midnight + Weekly Monday), Modifiers, & Single-Claim Rewards
+  await runCase('Competitive Challenges enforce modifiers, rotate across local midnight and ISO Monday, and claim rewards once', () => {
+    storage.clear();
+    currencyManager.reset();
+    playerProgressionManager.reset(true);
+    characterSkinManager.reset();
+
+    assert.equal(CHALLENGE_POOL.length, 11);
+    assert.ok(DAILY_COMPETITIVE_POOL.length >= 5);
+    assert.ok(WEEKLY_COMPETITIVE_POOL.length >= 4);
+
+    let fakeNow = new Date(2026, 6, 13, 12, 0, 0).getTime(); // Mon Jul 13 2026
+    const cm = new ChallengeManager(() => fakeNow);
+    const daily1 = cm.getDailyChallenge(fakeNow);
+    const weekly1 = cm.getWeeklyChallenge(fakeNow);
+    assert.equal(daily1.status, 'active');
+    assert.equal(weekly1.status, 'active');
+
+    // Run violating No-PowerUp challenge fails modifier AND exceeds 24s time limit so Turbo Sprint stays active
+    cm.evaluateCompletedRun({
+      runId: 'c_fail',
+      score: 20,
+      pipesPassed: 20,
+      durationSec: 30,
+      coinsCollected: 3,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'challenge',
+      usedPowerUp: true,
+      powerUpCount: 1,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: true,
+      activeChallengeId: 'ch_no_powerup_normal',
+      nowMs: fakeNow,
+    });
+    assert.equal(
+      cm.getAllChallenges().find((c) => c.id === 'ch_no_powerup_normal')?.status,
+      'active',
+      'Challenge with disablePowerUps must reject runs that used a power-up'
+    );
+
+    // Valid Extreme Speed Sprint pass (score 18 <= 24s, no shield/revive) + No-PowerUp pass
+    const evalPass = cm.evaluateCompletedRun({
+      runId: 'c_pass',
+      score: 20,
+      pipesPassed: 20,
+      durationSec: 21.5,
+      coinsCollected: 5,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'challenge',
+      usedPowerUp: false,
+      powerUpCount: 0,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: true,
+      activeChallengeId: 'ch_speed_sprint_extreme',
+      nowMs: fakeNow,
+    });
+    assert.ok(
+      evalPass.completedChallengeDefs.some((d) => d.id === 'ch_speed_sprint_extreme'),
+      'Turbo Sprint must complete when score >= 18 and duration <= 24s without shield/revive'
+    );
+    assert.ok(
+      evalPass.completedChallengeDefs.some((d) => d.id === 'ch_no_powerup_normal'),
+      'No-PowerUp must complete when powerUpCount === 0 and score >= 18'
+    );
+
+    // Claim Extreme Speed Sprint once and verify exact EXTREME preset rewards
+    const claim1 = cm.claimChallenge('ch_speed_sprint_extreme');
+    assert.equal(claim1.success, true);
+    assert.equal(claim1.coinsGranted, CHALLENGE_REWARD_PRESETS.EXTREME.coins);
+    assert.equal(claim1.gemsGranted, CHALLENGE_REWARD_PRESETS.EXTREME.gems);
+    assert.equal(claim1.xpGranted, CHALLENGE_REWARD_PRESETS.EXTREME.xp);
+    assert.equal(currencyManager.getSnapshot().coins, CHALLENGE_REWARD_PRESETS.EXTREME.coins);
+
+    // Double claim must fail
+    const claimDup = cm.claimChallenge('ch_speed_sprint_extreme');
+    assert.equal(claimDup.success, false);
+
+    // Advance 1 day -> Daily resets, Weekly stays same week
+    fakeNow = new Date(2026, 6, 14, 0, 5, 0).getTime();
+    const daily2 = cm.getDailyChallenge(fakeNow);
+    const weekly2 = cm.getWeeklyChallenge(fakeNow);
+    assert.notEqual(daily2.dateKey, daily1.dateKey);
+    assert.equal(weekly2.weekKey, weekly1.weekKey);
+
+    // Advance next Monday -> Weekly resets
+    fakeNow = new Date(2026, 6, 20, 0, 5, 0).getTime();
+    const weekly3 = cm.getWeeklyChallenge(fakeNow);
+    assert.notEqual(weekly3.weekKey, weekly1.weekKey);
+  });
+
+  // 47. Update 7 Ghost Recording & Interpolation (15Hz sample, >900 frame decimation, PB/Prev overwrite, abort discard)
+  await runCase('GhostRecordingManager captures 15Hz trajectory, caps frame buffer cleanly, interpolates playback, and discards aborted runs', () => {
+    storage.clear();
+    const gm = new GhostRecordingManager();
+    assert.equal(gm.hasPbGhost(), false);
+
+    // Record run exceeding 900 frames (~70s) and verify decimation keeps buffer bounded
+    gm.startRecording();
+    for (let i = 0; i < 1050; i++) {
+      gm.recordFrame(0.07, 250 + Math.sin(i * 0.1) * 40, (i % 10) * 0.05);
+    }
+    const capturedLong = gm.finalizeRecording({
+      score: 12,
+      characterId: 'classic_bird',
+      skinId: 'default',
+      worldId: 'green_valley',
+      nowMs: 1700000100000,
+    });
+    assert.ok(capturedLong.length <= 900, 'Ghost frame buffer must remain bounded <= 900 frames');
+    assert.equal(gm.hasPbGhost(), true);
+    assert.equal(gm.getPbGhost()?.score, 12);
+
+    // Higher score overwrites pbGhost; lower score only updates prevGhost
+    gm.startRecording();
+    for (let i = 0; i < 10; i++) {
+      gm.recordFrame(0.08, 300 - i * 5, -0.2);
+    }
+    gm.finalizeRecording({
+      score: 6,
+      characterId: 'chicky',
+      skinId: 'default',
+      worldId: 'green_valley',
+      nowMs: 1700000200000,
+    });
+    assert.equal(gm.getPrevGhost()?.score, 6);
+    assert.equal(gm.getPbGhost()?.score, 12, 'Lower score must not overwrite PB Ghost');
+
+    // Linear interpolation sampling does not mutate Physics or Collision
+    const midSample = gm.sampleGhostAtTime('prev', 0.12);
+    assert.ok(midSample && !midSample.finished);
+    assert.ok(midSample!.y <= 300 && midSample!.y >= 255);
+    const endSample = gm.sampleGhostAtTime('prev', 999);
+    assert.ok(endSample && endSample.finished);
+
+    // Cancelled/aborted run discards active frames without persisting
+    gm.startRecording();
+    for (let i = 0; i < 5; i++) {
+      gm.recordFrame(0.08, 220, 0);
+    }
+    gm.cancelRecording();
+    const afterCancel = gm.finalizeRecording({
+      score: 99,
+      characterId: 'classic_bird',
+      skinId: 'default',
+      worldId: 'green_valley',
+    });
+    assert.equal(afterCancel.length, 0);
+    assert.equal(gm.getPbGhost()?.score, 12, 'Aborted run must never overwrite PB Ghost');
+  });
+
+  // 48. Update 7 Competitive Rank Anti-Farming & 2-Player Local Head-to-Head Summary
+  await runCase('Competitive Rank deduplicates anti-farming point events across tiers and 2P H2H aggregates local match telemetry', () => {
+    storage.clear();
+    currencyManager.reset();
+    playerProgressionManager.reset(true);
+
+    assert.equal(COMPETITIVE_RANK_TIERS.length, 8);
+    assert.equal(computeCompetitiveRank(0).tier, 'BRONZE');
+    assert.equal(computeCompetitiveRank(100).tier, 'SILVER');
+    assert.equal(computeCompetitiveRank(300).tier, 'GOLD');
+    assert.equal(computeCompetitiveRank(600).tier, 'PLATINUM');
+    assert.equal(computeCompetitiveRank(1000).tier, 'DIAMOND');
+    assert.equal(computeCompetitiveRank(1500).tier, 'MASTER');
+    assert.equal(computeCompetitiveRank(2500).tier, 'GRANDMASTER');
+    assert.equal(computeCompetitiveRank(5000).tier, 'LEGEND');
+
+    const rankMgr = new CompetitiveRankManager();
+    const first = rankMgr.awardPointsOnce('pb_tier_5', 100);
+    assert.equal(first.awarded, true);
+    assert.equal(first.promoted, true);
+    assert.equal(first.newRank.tier, 'SILVER');
+
+    const dup = rankMgr.awardPointsOnce('pb_tier_5', 100);
+    assert.equal(dup.awarded, false, 'Duplicate eventId must not farm extra Competitive Points');
+    assert.equal(rankMgr.getPoints(), 100);
+
+    // 2P Head-to-Head integration with LeaderboardManager & CompetitiveManager
+    const cm = new CompetitiveManager();
+    cm.reset();
+    leaderboardManager.reset();
+    saveStoredPlayerNames('GARSA', 'BUDI');
+    const matchData = createInitialMatchData('GARSA', 'BUDI', 'bo3');
+    matchData.status = 'completed';
+    matchData.winner = 'player1';
+    matchData.player1Wins = 2;
+    matchData.player2Wins = 1;
+    matchData.player1BestRoundScore = 19;
+    matchData.player2BestRoundScore = 14;
+    matchData.completedAt = 1700000500000;
+    leaderboardManager.recordCompletedMatch(matchData);
+    cm.recordTwoPlayerMatch({
+      matchId: 'h2h_m1',
+      format: 'bo3',
+      player1Name: 'GARSA',
+      player2Name: 'BUDI',
+      player1Best: 19,
+      player2Best: 14,
+      worldId: 'green_valley',
+      winner: 'player1',
+    });
+    const h2h = cm.getTwoPlayerHeadToHead();
+    assert.equal(h2h.p1Name, 'GARSA');
+    assert.equal(h2h.p2Name, 'BUDI');
+    assert.equal(h2h.p1Wins, 1);
+    assert.equal(h2h.p2Losses, 1);
+    assert.equal(h2h.p1BestScore, 19);
+    assert.ok(h2h.awards.length >= 2);
+  });
+
+  // 49. Update 7 End-to-End Integration: CompetitiveManager -> Achievements, Settings Toggles, & Corrupt Save Recovery
+  await runCase('CompetitiveManager syncs all 10 competitive achievements, Settings toggles persist, and corrupt storage recovers gracefully', () => {
+    storage.clear();
+    currencyManager.reset();
+    characterUnlockManager.reset();
+    characterSkinManager.reset();
+    worldUnlockManager.reset();
+    missionManager.reset();
+    playerProgressionManager.reset(true);
+    rewardShopManager.reset();
+    competitiveManager.reset();
+
+    const am = new AchievementManager();
+    competitiveManager.onExternalAchievementSync((metrics) => {
+      am.recordEvent({ type: 'competitive_sync', ...metrics });
+    });
+
+    // Establish baseline PB 15, then defeat LEGEND TITAN AI (score 75) cleanly -> unlocks rival_slayer, score_breaker, legendary_rival
+    competitiveManager.recordCompletedRun({
+      runId: 'e2e_1',
+      score: 15,
+      pipesPassed: 15,
+      durationSec: 20,
+      coinsCollected: 4,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'solo',
+      usedPowerUp: false,
+      powerUpCount: 0,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: true,
+      activeChallengeId: null,
+      nowMs: 1700000100000,
+    });
+
+    competitiveManager.selectRival('ai_legend');
+    competitiveManager.recordCompletedRun({
+      runId: 'e2e_2',
+      score: 75,
+      pipesPassed: 75,
+      durationSec: 65,
+      coinsCollected: 12,
+      worldId: 'green_valley',
+      characterId: 'classic_bird',
+      skinId: 'default',
+      gameMode: 'challenge',
+      usedPowerUp: false,
+      powerUpCount: 0,
+      usedShield: false,
+      usedSecondChance: false,
+      collided: true,
+      activeChallengeId: 'ch_extreme_sovereign',
+      nowMs: 1700000200000,
+    });
+
+    const achMap = new Map(am.getAll().map((a) => [a.id, a]));
+    assert.ok(achMap.get('legendary_rival')?.unlocked, 'Defeating Legend AI must unlock legendary_rival');
+    assert.equal(achMap.get('rival_slayer')?.progress, 2, 'Defeating 2 rivals must advance rival_slayer progress to 2/10');
+    assert.equal(achMap.get('score_breaker')?.progress, 1, 'Breaking PB once must advance score_breaker progress to 1/10');
+    assert.ok((achMap.get('challenge_master')?.progress ?? 0) >= 1, 'Completing challenges must advance challenge_master progress');
+
+    // Syncing milestone thresholds unlocks remaining competitive achievements + bonus title/badge
+    am.recordEvent({
+      type: 'competitive_sync',
+      rivalsDefeated: 10,
+      legendRivalDefeatedCount: 1,
+      personalBestBreaks: 10,
+      challengesCompleted: 50,
+      dailyChallengesCompleted: 30,
+      weeklyChallengesCompleted: 12,
+      perfectRunsCompleted: 10,
+      competitivePoints: 5000,
+    });
+    const syncedMap = new Map(am.getAll().map((a) => [a.id, a]));
+    assert.ok(syncedMap.get('rival_slayer')?.unlocked);
+    assert.ok(syncedMap.get('score_breaker')?.unlocked);
+    assert.ok(syncedMap.get('challenge_master')?.unlocked);
+    assert.ok(syncedMap.get('competitive_elite')?.unlocked);
+    assert.ok(syncedMap.get('ultimate_champion')?.unlocked);
+
+    // Settings toggles persist cleanly
+    const sm = new SettingsManager();
+    sm.update({
+      competitiveNotificationsEnabled: false,
+      ghostRunEnabled: false,
+    });
+    const sReloaded = new SettingsManager().getSettings();
+    assert.equal(sReloaded.competitiveNotificationsEnabled, false);
+    assert.equal(sReloaded.ghostRunEnabled, false);
+
+    // Corrupt localStorage payload recovers cleanly without throwing
+    storage.set('flappy_face_competitive', '{broken-competitive-json!!!');
+    storage.set('flappy_face_ghost_runs', '{broken-ghost-json!!!');
+    const recoveredComp = new CompetitiveManager();
+    assert.equal(recoveredComp.getEffectiveBestScore(), 0);
+    assert.equal(recoveredComp.getSnapshot().scoreHistory.length, 0);
+    assert.equal(recoveredComp.getSnapshot().hasPbGhost, false);
   });
 
   console.log(`\nALL ${passed} TESTS PASSED.`);

@@ -406,6 +406,35 @@ export const BADGE_REGISTRY: readonly BadgeDefinition[] = [
     points: 250,
     linkedAchievementId: 'streak_30',
   },
+
+  // COMPETITIVE BADGES (in existing skill & tournament categories)
+  {
+    id: 'extreme_challenger',
+    name: 'Extreme Challenger',
+    category: 'skill',
+    rarity: 'EPIC',
+    shape: 'flame',
+    primaryColor: '#F43F5E',
+    secondaryColor: '#FFE4E6',
+    accentColor: '#FDE047',
+    description: 'Menaklukkan Extreme Competitive Challenge di Competitive Hub.',
+    unlockConditionLabel: 'Claim Extreme Competitive Challenge',
+    points: 100,
+  },
+  {
+    id: 'competitive_legend',
+    name: 'Legend Challenger',
+    category: 'tournament',
+    rarity: 'LEGENDARY',
+    shape: 'crown',
+    primaryColor: '#EF4444',
+    secondaryColor: '#FEE2E2',
+    accentColor: '#FACC15',
+    description: 'Mencapai puncak Competitive Rank: LEGEND!',
+    unlockConditionLabel: 'Competitive Rank: LEGEND (5.000 Pts)',
+    points: 250,
+    linkedAchievementId: 'ultimate_champion',
+  },
 ];
 
 // Fix pure_wings shape to 'wings' cleanly below

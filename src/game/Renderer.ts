@@ -1,4 +1,6 @@
 import { Background } from './Background';
+import { CharacterRenderer } from './character/CharacterRenderer';
+import { GhostReplaySample } from './competitive/CompetitiveTypes';
 import { GAME_CONFIG, GameState } from './Config';
 import { Ground } from './Ground';
 import { ParticleSystem } from './ParticleSystem';
@@ -112,7 +114,8 @@ export class Renderer {
     player: Player,
     score: Score,
     elapsedTime: number,
-    powerUps?: PowerUpManager
+    powerUps?: PowerUpManager,
+    ghostSample: GhostReplaySample | null = null
   ): void {
     const ctx = this.ctx;
     const { worldWidth, worldHeight, groundHeight } = GAME_CONFIG;
@@ -164,6 +167,41 @@ export class Renderer {
       state === 'PLAYER_2_PLAYING' ||
       state === 'PLAYER_2_GAME_OVER';
     if (showGameplayBird) {
+      if (ghostSample) {
+        ctx.save();
+        ctx.globalAlpha = ghostSample.finished ? 0.2 : 0.42;
+        CharacterRenderer.draw(ctx, {
+          x: ghostSample.x - 10,
+          y: ghostSample.y,
+          visualRadius: GAME_CONFIG.player.visualRadius,
+          rotation: ghostSample.rot,
+          wingPhase: elapsedTime * 10,
+          flapPulse: 0,
+          isDead: false,
+          isBlinking: false,
+          customFaceImage: null,
+          characterId: ghostSample.characterId,
+          skinId: ghostSample.skinId,
+          animTime: elapsedTime,
+        });
+        ctx.restore();
+
+        ctx.save();
+        ctx.globalAlpha = ghostSample.finished ? 0.35 : 0.82;
+        ctx.font = '800 9px Nunito, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const tagX = ghostSample.x - 10;
+        const tagY = Math.max(24, ghostSample.y - GAME_CONFIG.player.visualRadius - 12);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+        ctx.beginPath();
+        ctx.roundRect(tagX - 27, tagY - 7, 54, 14, 6);
+        ctx.fill();
+        ctx.fillStyle = '#BAE6FD';
+        ctx.fillText(ghostSample.label, tagX, tagY + 0.5);
+        ctx.restore();
+      }
+
       if (background.isDarkWorld()) {
         ctx.save();
         ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';

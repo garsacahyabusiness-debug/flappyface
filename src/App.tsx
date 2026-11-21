@@ -13,6 +13,11 @@ import { characterSkinManager, SkinId } from './game/character/CharacterSkinMana
 import { CharacterSlot } from './game/character/CharacterStorage';
 import { CharacterMetrics, characterUnlockManager } from './game/character/CharacterUnlockManager';
 import { Game, GameUIState } from './game/Game';
+import { competitiveManager } from './game/competitive/CompetitiveManager';
+import {
+  CompetitiveNotificationItem,
+  CompetitiveSnapshot,
+} from './game/competitive/CompetitiveTypes';
 import { rewardShopManager } from './game/achievements/RewardShopManager';
 import { currencyManager, CurrencySnapshot } from './game/powerups/CurrencyManager';
 import {
@@ -56,6 +61,8 @@ import { CharacterCustomization } from './ui/CharacterCustomization';
 import { CharacterProfileScreen } from './ui/CharacterProfileScreen';
 import { CharacterSelectScreen } from './ui/CharacterSelectScreen';
 import { CharacterUnlockPopup } from './ui/CharacterUnlockPopup';
+import { CompetitiveHubScreen } from './ui/CompetitiveHubScreen';
+import { CompetitiveNotificationToast } from './ui/CompetitiveNotificationToast';
 import { CountdownOverlay } from './ui/CountdownOverlay';
 import { GameOverOverlay } from './ui/GameOverOverlay';
 import { LeaderboardUI } from './ui/LeaderboardUI';
@@ -66,6 +73,7 @@ import { MissionCenterScreen } from './ui/MissionCenterScreen';
 import { MissionNotificationToast } from './ui/MissionNotificationToast';
 import { OfflineIndicator } from './ui/OfflineIndicator';
 import { PauseOverlay } from './ui/PauseOverlay';
+import { PersonalBestPopup } from './ui/PersonalBestPopup';
 import { PlayerProfileScreen } from './ui/PlayerProfileScreen';
 import { PlayerProgressionScreen, ProgressionTab } from './ui/PlayerProgressionScreen';
 import { PowerUpHUD } from './ui/PowerUpHUD';
@@ -145,6 +153,12 @@ export default function App() {
   );
   const [progressionInitialTab, setProgressionInitialTab] = useState<ProgressionTab>('rewards');
   const [missionQueue, setMissionQueue] = useState<MissionCompletionNotification[]>([]);
+  const [competitiveSnapshot, setCompetitiveSnapshot] = useState<CompetitiveSnapshot>(() =>
+    competitiveManager.getSnapshot()
+  );
+  const [competitiveNotifications, setCompetitiveNotifications] = useState<
+    CompetitiveNotificationItem[]
+  >(() => competitiveManager.getPendingNotifications());
   const [achievementQueue, setAchievementQueue] = useState<AchievementRecord[]>([]);
   const [characterUnlockQueue, setCharacterUnlockQueue] = useState<CharacterDefinition[]>([]);
   const [worldUnlockQueue, setWorldUnlockQueue] = useState<WorldDefinition[]>([]);
@@ -207,6 +221,11 @@ export default function App() {
     runCoinsCollected: 0,
     runGemsCollected: 0,
     runXPGained: 0,
+    activeChallenge: null,
+    runDurationSec: 0,
+    selectedRival: competitiveManager.rivals.getSelectedRival(0),
+    competitiveBestScore: competitiveManager.getEffectiveBestScore(),
+    previousRunScore: competitiveManager.history.getPreviousRunScore() ?? 0,
   });
 
   const consumeCurrentAchievement = useCallback(() => {
@@ -287,6 +306,12 @@ export default function App() {
       setXpToastQueue(playerProgressionManager.getPendingXPNotifications());
       setLevelUpQueue(playerProgressionManager.getPendingLevelUps());
     });
+    const unsubCompetitive = competitiveManager.subscribe((snap) => {
+      setCompetitiveSnapshot(snap);
+    });
+    const unsubCompetitiveNotes = competitiveManager.subscribeNotifications((items) => {
+      setCompetitiveNotifications(items);
+    });
     return () => {
       unsubSettings();
       unsubAchievements();
@@ -302,6 +327,8 @@ export default function App() {
       unsubMissionNotes();
       unsubProgression();
       unsubProgressionQueues();
+      unsubCompetitive();
+      unsubCompetitiveNotes();
     };
   }, []);
 
@@ -326,6 +353,7 @@ export default function App() {
       'CHARACTER_COLLECTION',
       'CHARACTER_SELECT',
       'MISSION_CENTER',
+      'COMPETITIVE_HUB',
       'PLAYER_PROFILE',
       'PLAYER_PROGRESSION',
       'ACHIEVEMENTS',
@@ -527,6 +555,7 @@ export default function App() {
         currentState === 'LEADERBOARD' ||
         currentState === 'ACHIEVEMENTS' ||
         currentState === 'MISSION_CENTER' ||
+        currentState === 'COMPETITIVE_HUB' ||
         currentState === 'PLAYER_PROGRESSION' ||
         currentState === 'PLAYER_PROFILE' ||
         currentState === 'STATS' ||
@@ -708,6 +737,21 @@ export default function App() {
           onConsumeCurrent={(id) => playerProgressionManager.consumeXPNotification(id)}
         />
 
+        {/* NON-BLOCKING COMPETITIVE NOTIFICATION TOAST */}
+        <CompetitiveNotificationToast
+          queue={competitiveNotifications}
+          enabled={settings.competitiveNotificationsEnabled}
+          suppressed={
+            achievementQueue.length > 0 ||
+            missionQueue.length > 0 ||
+            xpToastQueue.length > 0
+          }
+          isPlaying={isFlightOrCountdown}
+          reducedMotion={settings.reducedMotion}
+          onConsumeCurrent={(id) => competitiveManager.consumeNotification(id)}
+          onOpenHub={() => gameRef.current?.setMenuState('COMPETITIVE_HUB')}
+        />
+
         {/* NON-BLOCKING NEW BEST HUD CELEBRATION */}
         {uiState.state === 'PLAYING' && showNewBestBanner && (
           <div className="pointer-events-none absolute top-24 left-1/2 z-20 -translate-x-1/2">
@@ -772,6 +816,36 @@ export default function App() {
           />
         )}
 
+        {/* COMPACT LIVE RIVAL & CHALLENGE HUD STRIP (SOLO / CHALLENGE ONLY) */}
+        {uiState.state === 'PLAYING' && (
+          <div className="pointer-events-none absolute top-16 right-4 z-20 flex flex-col items-end gap-1">
+            {uiState.activeChallenge && (
+              <div className="rounded-xl border-2 border-[#24415C] bg-[#FFF9DB]/95 px-2.5 py-0.5 text-[10px] font-black text-[#24415C] shadow-[0_2px_0_#24415C]">
+                🎯 {uiState.activeChallenge.title} ·{' '}
+                <span className="tabular-nums text-[#0369A1]">
+                  {uiState.activeChallenge.metric === 'duration_sec'
+                    ? `${Math.floor(uiState.runDurationSec)}/${uiState.activeChallenge.targetValue}s`
+                    : uiState.activeChallenge.metric === 'coins'
+                      ? `${uiState.runCoinsCollected}/${uiState.activeChallenge.targetValue}`
+                      : `${uiState.score}/${uiState.activeChallenge.targetValue}`}
+                </span>
+              </div>
+            )}
+            <div className="rounded-xl border-2 border-[#24415C] bg-white/90 px-2 py-0.5 text-[9px] font-black tabular-nums text-[#24415C] shadow-[0_2px_0_#24415C]">
+              {uiState.selectedRival.name.replace(' [AI]', '')}:{' '}
+              <span
+                className={
+                  uiState.score > uiState.selectedRival.targetScore
+                    ? 'text-emerald-600'
+                    : 'text-[#FF6B6B]'
+                }
+              >
+                {uiState.score}/{uiState.selectedRival.targetScore}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* BRIEF NON-BLOCKING POWER-UP ACTIVATION BANNER */}
         <PowerUpNotification
           banner={uiState.latestPowerUpBanner}
@@ -814,6 +888,14 @@ export default function App() {
               achievementRankLabel={achievementSnapshot.stats.rank.label}
               badgeEffectsEnabled={settings.achievementBadgeEffectsEnabled}
               reducedMotion={settings.reducedMotion}
+              competitiveRankLabel={competitiveSnapshot.rank.label}
+              competitiveRankColor={competitiveSnapshot.rank.colorHex}
+              competitivePoints={competitiveSnapshot.rank.points}
+              unclaimedChallenges={competitiveManager.challenges.getUnclaimedCount()}
+              onCompetitiveHub={() => {
+                competitiveManager.ensureCurrentPeriods();
+                gameRef.current?.setMenuState('COMPETITIVE_HUB');
+              }}
               onPlay={() => gameRef.current?.startReady()}
               onTwoPlayer={() => {
                 const current = loadStoredPlayerNames();
@@ -1084,6 +1166,34 @@ export default function App() {
               players={leaderboardPlayers}
               history={matchHistory}
               singlePlayerBest={Math.max(uiState.bestScore, stats.bestScore)}
+              onOpenCompetitiveHub={() => {
+                competitiveManager.ensureCurrentPeriods();
+                gameRef.current?.setMenuState('COMPETITIVE_HUB');
+              }}
+              onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
+            />
+          </div>
+        )}
+
+        {/* COMPETITIVE HUB SCREEN */}
+        {uiState.state === 'COMPETITIVE_HUB' && (
+          <div className="absolute inset-0 z-20">
+            <CompetitiveHubScreen
+              snapshot={competitiveSnapshot}
+              singlePlayerBest={Math.max(uiState.bestScore, stats.bestScore)}
+              onStartChallenge={(challengeId) => {
+                gameRef.current?.startChallenge(challengeId);
+              }}
+              onPlayQuickDuel={() => {
+                const current = loadStoredPlayerNames();
+                const updated = saveStoredPlayerNames(
+                  current.player1Name,
+                  current.player2Name,
+                  'quick'
+                );
+                setTwoPlayerDraftNames(updated);
+                gameRef.current?.setMenuState('TWO_PLAYER_SETUP');
+              }}
               onBack={() => gameRef.current?.setMenuState('MAIN_MENU')}
             />
           </div>
@@ -1233,6 +1343,7 @@ export default function App() {
                 gameRef.current?.resetCollectionAndSkins();
                 missionManager.reset();
                 rewardShopManager.reset();
+                competitiveManager.reset();
                 settingsManager.resetToDefaults();
                 leaderboardManager.reset();
                 resetStoredPlayerNames();
@@ -1355,6 +1466,27 @@ export default function App() {
             );
           })()}
 
+        {/* NEW PERSONAL BEST CELEBRATION POPUP (NON-BLOCKING OUTSIDE FLIGHT) */}
+        {!isFlightOrCountdown &&
+          achievementQueue.length === 0 &&
+          characterUnlockQueue.length === 0 &&
+          worldUnlockQueue.length === 0 &&
+          levelUpQueue.length === 0 &&
+          (() => {
+            const pbNote = competitiveNotifications.find(
+              (n) => n.type === 'NEW_PERSONAL_BEST' && n.pbEvent
+            );
+            if (!pbNote || !settings.competitiveNotificationsEnabled) return null;
+            return (
+              <PersonalBestPopup
+                event={pbNote.pbEvent ?? null}
+                reducedMotion={settings.reducedMotion}
+                onDismiss={() => competitiveManager.consumeNotification(pbNote.id)}
+                onOpenHub={() => gameRef.current?.setMenuState('COMPETITIVE_HUB')}
+              />
+            );
+          })()}
+
         {/* PRIVACY POLICY MODAL */}
         {showPrivacyModal && <PrivacyModal onClose={() => setShowPrivacyModal(false)} />}
 
@@ -1425,6 +1557,14 @@ export default function App() {
             runCoins={uiState.runCoinsCollected}
             runGems={uiState.runGemsCollected}
             runXP={uiState.runXPGained}
+            previousRunScore={uiState.previousRunScore}
+            rivalName={uiState.selectedRival.name}
+            rivalTargetScore={uiState.selectedRival.targetScore}
+            activeChallengeTitle={uiState.activeChallenge?.title ?? null}
+            onOpenCompetitiveHub={() => {
+              competitiveManager.ensureCurrentPeriods();
+              gameRef.current?.setMenuState('COMPETITIVE_HUB');
+            }}
             onRetry={() => gameRef.current?.restart()}
             onHome={() => gameRef.current?.setMenuState('MAIN_MENU')}
           />

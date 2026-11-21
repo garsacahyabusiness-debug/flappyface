@@ -471,6 +471,12 @@ export class AudioManager {
     const ready = this.canPlaySfx(true);
     if (ready) this.soundGen.playTitleUnlocked(ready.ctx, ready.out);
   }
+
+  public playChallengeComplete(): void {
+    this.unlock();
+    const ready = this.canPlaySfx(true);
+    if (ready) this.soundGen.playChallengeComplete(ready.ctx, ready.out);
+  }
 }
 
 export const audioManager = new AudioManager();

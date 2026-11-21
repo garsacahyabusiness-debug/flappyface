@@ -7,6 +7,7 @@ import { PowerUpId } from '../powerups/PowerUpRegistry';
 import { playerProgressionManager } from '../progression/PlayerProgressionManager';
 import { worldUnlockManager } from '../worlds/WorldUnlockManager';
 import { WORLD_MAP } from '../worlds/WorldRegistry';
+import { competitiveManager } from '../competitive/CompetitiveManager';
 import { ACHIEVEMENT_CHAINS } from './AchievementChains';
 import {
   ACHIEVEMENT_RARITY_CONFIG,
@@ -162,6 +163,15 @@ function defaultMetrics(): AchievementMetrics {
     runsTodayCount: 0,
     maxRunsInSingleDay: 0,
     weekendRunsCount: 0,
+
+    rivalsDefeated: 0,
+    legendRivalDefeatedCount: 0,
+    personalBestBreaks: 0,
+    challengesCompleted: 0,
+    dailyChallengesCompleted: 0,
+    weeklyChallengesCompleted: 0,
+    perfectRunsCompleted: 0,
+    competitivePoints: 0,
   };
 }
 
@@ -220,6 +230,12 @@ export class AchievementManager {
             bestStreak: ev.bestStreak,
           });
         }
+      });
+      competitiveManager.onExternalAchievementSync?.((compMetrics) => {
+        this.recordEvent({
+          type: 'competitive_sync',
+          ...compMetrics,
+        });
       });
     } catch {
       // Ignore if test harnesses isolate singletons
@@ -331,6 +347,12 @@ export class AchievementManager {
 
   public getBadgeCollection(): BadgeRecord[] {
     const shopOwned = new Set(rewardShopManager.getOwnedIds());
+    let compBadges = new Set<string>();
+    try {
+      compBadges = new Set(competitiveManager.getSnapshot().unlockedCompetitiveBadges);
+    } catch {
+      compBadges = new Set<string>();
+    }
     return FIXED_BADGE_REGISTRY.map((badge) => {
       let unlocked = false;
       let unlockedAt: number | null = null;
@@ -342,6 +364,10 @@ export class AchievementManager {
         }
       }
       if (!unlocked && badge.linkedShopItemId && shopOwned.has(badge.linkedShopItemId)) {
+        unlocked = true;
+        unlockedAt = unlockedAt ?? Date.now();
+      }
+      if (!unlocked && compBadges.has(badge.id)) {
         unlocked = true;
         unlockedAt = unlockedAt ?? Date.now();
       }
@@ -773,6 +799,37 @@ export class AchievementManager {
         this.metrics.totalMissionsCompleted,
         mSnap.stats.totalCompleted
       );
+
+      const compPayload = competitiveManager.getAchievementMetricsPayload();
+      this.metrics.rivalsDefeated = Math.max(this.metrics.rivalsDefeated, compPayload.rivalsDefeated);
+      this.metrics.legendRivalDefeatedCount = Math.max(
+        this.metrics.legendRivalDefeatedCount,
+        compPayload.legendRivalDefeatedCount
+      );
+      this.metrics.personalBestBreaks = Math.max(
+        this.metrics.personalBestBreaks,
+        compPayload.personalBestBreaks
+      );
+      this.metrics.challengesCompleted = Math.max(
+        this.metrics.challengesCompleted,
+        compPayload.challengesCompleted
+      );
+      this.metrics.dailyChallengesCompleted = Math.max(
+        this.metrics.dailyChallengesCompleted,
+        compPayload.dailyChallengesCompleted
+      );
+      this.metrics.weeklyChallengesCompleted = Math.max(
+        this.metrics.weeklyChallengesCompleted,
+        compPayload.weeklyChallengesCompleted
+      );
+      this.metrics.perfectRunsCompleted = Math.max(
+        this.metrics.perfectRunsCompleted,
+        compPayload.perfectRunsCompleted
+      );
+      this.metrics.competitivePoints = Math.max(
+        this.metrics.competitivePoints,
+        compPayload.competitivePoints
+      );
     } catch {
       // Safe fallback in isolated tests
     }
@@ -1047,6 +1104,30 @@ export class AchievementManager {
 
       case 'menu_visited': {
         pushUnique(m.visitedMenus, ev.menuId);
+        break;
+      }
+
+      case 'competitive_sync': {
+        m.rivalsDefeated = Math.max(m.rivalsDefeated, safeNonNeg(ev.rivalsDefeated));
+        m.legendRivalDefeatedCount = Math.max(
+          m.legendRivalDefeatedCount,
+          safeNonNeg(ev.legendRivalDefeatedCount)
+        );
+        m.personalBestBreaks = Math.max(m.personalBestBreaks, safeNonNeg(ev.personalBestBreaks));
+        m.challengesCompleted = Math.max(m.challengesCompleted, safeNonNeg(ev.challengesCompleted));
+        m.dailyChallengesCompleted = Math.max(
+          m.dailyChallengesCompleted,
+          safeNonNeg(ev.dailyChallengesCompleted)
+        );
+        m.weeklyChallengesCompleted = Math.max(
+          m.weeklyChallengesCompleted,
+          safeNonNeg(ev.weeklyChallengesCompleted)
+        );
+        m.perfectRunsCompleted = Math.max(
+          m.perfectRunsCompleted,
+          safeNonNeg(ev.perfectRunsCompleted)
+        );
+        m.competitivePoints = Math.max(m.competitivePoints, safeNonNeg(ev.competitivePoints));
         break;
       }
 
@@ -1329,6 +1410,15 @@ export class AchievementManager {
       d.runsTodayCount = safeNonNeg(mRaw.runsTodayCount);
       d.maxRunsInSingleDay = safeNonNeg(mRaw.maxRunsInSingleDay);
       d.weekendRunsCount = safeNonNeg(mRaw.weekendRunsCount);
+
+      d.rivalsDefeated = safeNonNeg(mRaw.rivalsDefeated);
+      d.legendRivalDefeatedCount = safeNonNeg(mRaw.legendRivalDefeatedCount);
+      d.personalBestBreaks = safeNonNeg(mRaw.personalBestBreaks);
+      d.challengesCompleted = safeNonNeg(mRaw.challengesCompleted);
+      d.dailyChallengesCompleted = safeNonNeg(mRaw.dailyChallengesCompleted);
+      d.weeklyChallengesCompleted = safeNonNeg(mRaw.weeklyChallengesCompleted);
+      d.perfectRunsCompleted = safeNonNeg(mRaw.perfectRunsCompleted);
+      d.competitivePoints = safeNonNeg(mRaw.competitivePoints);
     }
 
     // Hydrate history (backfill from unlocked v1 saves if history absent)

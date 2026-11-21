@@ -173,6 +173,16 @@ export interface AchievementMetrics {
   runsTodayCount: number;
   maxRunsInSingleDay: number;
   weekendRunsCount: number;
+
+  // Competitive Challenge System (Update 7)
+  rivalsDefeated: number;
+  legendRivalDefeatedCount: number;
+  personalBestBreaks: number;
+  challengesCompleted: number;
+  dailyChallengesCompleted: number;
+  weeklyChallengesCompleted: number;
+  perfectRunsCompleted: number;
+  competitivePoints: number;
 }
 
 export interface AchievementDefinition {
@@ -456,6 +466,17 @@ export type AchievementEvent =
   | {
       type: 'menu_visited';
       menuId: string;
+    }
+  | {
+      type: 'competitive_sync';
+      rivalsDefeated: number;
+      legendRivalDefeatedCount: number;
+      personalBestBreaks: number;
+      challengesCompleted: number;
+      dailyChallengesCompleted: number;
+      weeklyChallengesCompleted: number;
+      perfectRunsCompleted: number;
+      competitivePoints: number;
     }
   | {
       type: 'external_sync';
